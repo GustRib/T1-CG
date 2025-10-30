@@ -13,7 +13,7 @@ let scene, renderer, camera, light, orbit;
 scene = new THREE.Scene();    // Create main scene
 light = initDefaultBasicLight(scene, true); // Use default light
 renderer = initRenderer();    // View function in util/utils
-  renderer.setClearColor("rgb(50, 50, 90)");
+  renderer.setClearColor("rgba(50, 79, 90, 1)");
 camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
   camera.position.set(2.18, 1.62, 3.31);
 orbit = new OrbitControls( camera, renderer.domElement ); // Enable mouse rotation, pan, zoom etc.
