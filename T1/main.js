@@ -7,8 +7,16 @@ import {
 
 let scene, renderer, camera, light, orbit;
 let track1, track2, currentTrack;
-let car, speed = 0, maxSpeed = 2, acceleration = 0.02;
+const floorYAxis = 0.05;
+const floorWidth = 60;
+const floorHeight = 60;
+let car, speed = 0, maxSpeed = 1.5, acceleration = 0.05;
 let keys = {};
+
+// === INIT Ground ===
+let plane = createGroundPlaneXZ(700, 700);
+plane.material = setDefaultMaterial("#5b9452");
+plane.position.set(0, 0, 0);
 
 // === INICIAR SCENE ===
 scene = new THREE.Scene();
@@ -17,7 +25,10 @@ renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 400, 30));
 light = initDefaultBasicLight(scene);
 scene.add(camera);
+orbit = new OrbitControls(camera, renderer.domElement);
 
+
+// ==== CARRO =====
 function createCar() {
   let carGroup = new THREE.Group();
   const matBody = setDefaultMaterial("rgba(29, 27, 27, 0.49)");
@@ -32,7 +43,7 @@ function createCar() {
   const shapeHeight = carWidth;
   const shapeRadius = shapeHeight / 2;
   const shapeStraight = shapeWidth - (2 * shapeRadius);
-orbit = new OrbitControls(camera, renderer.domElement);
+
 
   const racetrackShape = new THREE.Shape();
 
@@ -138,24 +149,25 @@ orbit = new OrbitControls(camera, renderer.domElement);
   return carGroup;
 }
 
-orbit = new OrbitControls(camera, renderer.domElement);
+
 
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
-let plane = createGroundPlaneXZ(500, 500);
-plane.material = setDefaultMaterial("#5b9452");
-plane.position.set(0, 0, 0);
-
 scene.add(plane);
 
 car = createCar();
+
 scene.add(car);
+// ==== CARRO =====
+
+
 
 camera.position.set(0, 10, 15);
 camera.lookAt(car.position); 
-let startLineGeometry = new THREE.PlaneGeometry(40, 40);
+
+let startLineGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
 let startLineMaterial = setDefaultMaterial("orange");
 let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
 
@@ -176,8 +188,7 @@ function createWall(x, y, z){
 }
 
 function createrTrack1(){
-  let floorWidth = 40;
-  let floorHeight = 40;
+
 
   const floorGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
   const floorMaterial = setDefaultMaterial("#555555");
@@ -192,16 +203,8 @@ function createrTrack1(){
       floor['left'] = new THREE.Mesh(floorGeometry, floorMaterial);
       floor['right'] = new THREE.Mesh(floorGeometry, floorMaterial);
  
-      let divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-      floor['left'].add(divisor);
-      divisor.position.set(0, 19.5, 0.1); // ligeiramente acima do chão
-
-      divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-      floor['right'].add(divisor);
-      divisor.position.set(0, 19.5, 0.1); // ligeiramente acima do chão
-
-      floor['left'].position.set(-180, 0.05, 180 - i * floorHeight);
-      floor['right'].position.set(180, 0.05, 180 - i * floorHeight);
+      floor['left'].position.set(-270, floorYAxis, 270 - (i * (floorHeight)  ));
+      floor['right'].position.set(270, floorYAxis, 270 - (i * (floorHeight) ));
 
 
       if(i < 8){
@@ -211,19 +214,9 @@ function createrTrack1(){
         }else{
           floor['lower'] = new THREE.Mesh(floorGeometry, floorMaterial);
         }
-        divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-        floor['upper'].add(divisor);
-        divisor.rotation.z = Math.PI / 2;
-        divisor.position.set(-19.5, 0, 0.1); // ligeiramente acima do chão
 
-        divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-        floor['lower'].add(divisor);
-    
-        divisor.rotation.z = Math.PI / 2;
-        divisor.position.set(-19.5, 0, 0.1); // ligeiramente acima do chão
-
-        floor['upper'].position.set(-140 + i *floorWidth, 0.05, -180 );
-        floor['lower'].position.set(-140 + i *floorWidth, 0.05, 180);
+        floor['upper'].position.set(-210 + i *floorWidth, floorYAxis, -270);
+        floor['lower'].position.set(-210 + i *floorWidth, floorYAxis, 270);
       }
    
 
@@ -236,14 +229,51 @@ function createrTrack1(){
   return group;
 }
 
-let grid = new THREE.GridHelper(500, 40);
+let grid = new THREE.GridHelper(700, 40);
 scene.add(grid);
 scene.add(createrTrack1());
+
+// === KEY LOGIC ===
+function handleKeys() {
+  // troca de pista
+  if (keys['1']) switchTrack(1);
+  if (keys['2']) switchTrack(2);
+
+  // aceleração progressiva
+  if (keys['arrowup'] || keys['x']) {
+    speed += acceleration;
+    if (speed > maxSpeed) speed = maxSpeed;
+  } else if (keys['arrowdown']) {
+    speed -= acceleration * 1.2;
+    if (speed < -maxSpeed / 2) speed = -maxSpeed / 2;
+  } else {
+    // desaceleração natural
+    speed *= 0.98;
+  }
+
+  // rotação
+  if (keys['arrowleft']) car.rotation.y += 0.03;
+  if (keys['arrowright']) car.rotation.y -= 0.03;
+
+  // movimento
+  car.position.x -= Math.sin(car.rotation.y) * speed;
+  car.position.z -= Math.cos(car.rotation.y) * speed;
+}
+
+
+function updateCamera() {
+  const relCameraOffset = new THREE.Vector3(0, 15, 45);
+  const cameraOffset = relCameraOffset.applyMatrix4(car.matrixWorld);
+  camera.position.lerp(cameraOffset, 0.1);
+  camera.lookAt(car.position);
+}
+
 
 function render() {
   requestAnimationFrame(render);
   renderer.render(scene, camera);
- 
+   handleKeys();
+   updateCamera();
 }
 
 render();
