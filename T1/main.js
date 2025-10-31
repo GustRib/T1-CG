@@ -1,23 +1,34 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../build/jsm/controls/OrbitControls.js';
-import { 
-  initRenderer, initCamera, initDefaultBasicLight, 
-  setDefaultMaterial, InfoBox, onWindowResize, createGroundPlaneXZ 
+import {
+  initRenderer, initCamera, initDefaultBasicLight,
+  setDefaultMaterial, InfoBox, onWindowResize, createGroundPlaneXZ
 } from "../libs/util/util.js";
 
 let scene, renderer, camera, light, orbit;
 let track1, track2, currentTrack;
-let car, speed = 0, maxSpeed = 2, acceleration = 0.02;
+const floorYAxis = 0.05;
+const floorWidth = 60;
+const floorHeight = 60;
+let car, speed = 0, maxSpeed = 1.5, acceleration = 0.008;
 let keys = {};
+let clock = new THREE.Clock();
 
-// === INICIAR SCENE ===
+// Cria Plano
+let plane = createGroundPlaneXZ(700, 700);
+plane.material = setDefaultMaterial("#5b9452");
+plane.position.set(0, 0, 0);
+
+// Inicia cena
 scene = new THREE.Scene();
 renderer = initRenderer();
 renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 400, 30));
 light = initDefaultBasicLight(scene);
 scene.add(camera);
+orbit = new OrbitControls(camera, renderer.domElement);
 
+// Cria CARRO 
 function createCar() {
   let carGroup = new THREE.Group();
   const matBody = setDefaultMaterial("rgba(29, 27, 27, 0.49)");
@@ -32,7 +43,6 @@ function createCar() {
   const shapeHeight = carWidth;
   const shapeRadius = shapeHeight / 2;
   const shapeStraight = shapeWidth - (2 * shapeRadius);
-orbit = new OrbitControls(camera, renderer.domElement);
 
   const racetrackShape = new THREE.Shape();
 
@@ -58,7 +68,6 @@ orbit = new OrbitControls(camera, renderer.domElement);
   baseRoxa.rotation.z = Math.PI / 2;
   baseRoxa.position.y = carHeight / 2;
   carGroup.add(baseRoxa);
-
 
   const bumperHeight = 0.4;
   const ajusteY = 0.1;
@@ -138,112 +147,129 @@ orbit = new OrbitControls(camera, renderer.domElement);
   return carGroup;
 }
 
-orbit = new OrbitControls(camera, renderer.domElement);
-
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
-
-let plane = createGroundPlaneXZ(500, 500);
-plane.material = setDefaultMaterial("#5b9452");
-plane.position.set(0, 0, 0);
 
 scene.add(plane);
 
 car = createCar();
 scene.add(car);
-
+//  CARRO 
 camera.position.set(0, 10, 15);
-camera.lookAt(car.position); 
-let startLineGeometry = new THREE.PlaneGeometry(40, 40);
+camera.lookAt(car.position);
+
+let startLineGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
 let startLineMaterial = setDefaultMaterial("orange");
 let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
 
-function createWall(x, y, z){
+function createWall(x, y, z) {
   let halfWallsColors = ["red", "white"];
 
   let wall = new THREE.Group();
   let halfWallGeometry = new THREE.BoxGeometry(2, 20, 2);
   let wallMaterial = (color) => setDefaultMaterial(color);
 
-  for(let i=0; i<2; i++){
+  for (let i = 0; i < 2; i++) {
     let halfWall = new THREE.Mesh(halfWallGeometry, wallMaterial(halfWallsColors[i]));
-    halfWall.position.set((x-10)+ i*10, y, z);
+    halfWall.position.set((x - 10) + i * 10, y, z);
     wall.add(halfWall);
   }
-
   return wall;
 }
 
-function createrTrack1(){
-  let floorWidth = 40;
-  let floorHeight = 40;
-
+function createrTrack1() {
   const floorGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
   const floorMaterial = setDefaultMaterial("#555555");
-  
+
   const divisorGeomtery = new THREE.PlaneGeometry(floorWidth, 1);
   const divisorMaterial = setDefaultMaterial("red");
 
-  let group = new THREE.Group();  
-  let floor = {'left': null, 'right': null, 'upper': null, 'lower': null};
+  let group = new THREE.Group();
+  let floor = { 'left': null, 'right': null, 'upper': null, 'lower': null };
 
   for (let i = 0; i < 10; i++) {
-      floor['left'] = new THREE.Mesh(floorGeometry, floorMaterial);
-      floor['right'] = new THREE.Mesh(floorGeometry, floorMaterial);
- 
-      let divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-      floor['left'].add(divisor);
-      divisor.position.set(0, 19.5, 0.1); // ligeiramente acima do chão
+    floor['left'] = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor['right'] = new THREE.Mesh(floorGeometry, floorMaterial);
 
-      divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-      floor['right'].add(divisor);
-      divisor.position.set(0, 19.5, 0.1); // ligeiramente acima do chão
+    floor['left'].position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
+    floor['right'].position.set(270, floorYAxis, 270 - (i * (floorHeight)));
 
-      floor['left'].position.set(-180, 0.05, 180 - i * floorHeight);
-      floor['right'].position.set(180, 0.05, 180 - i * floorHeight);
-
-
-      if(i < 8){
-        floor['upper'] = new THREE.Mesh(floorGeometry, floorMaterial);
-        if(i == 5){
-          floor['lower'] = startLine;
-        }else{
-          floor['lower'] = new THREE.Mesh(floorGeometry, floorMaterial);
-        }
-        divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-        floor['upper'].add(divisor);
-        divisor.rotation.z = Math.PI / 2;
-        divisor.position.set(-19.5, 0, 0.1); // ligeiramente acima do chão
-
-        divisor = new THREE.Mesh(divisorGeomtery, divisorMaterial);
-        floor['lower'].add(divisor);
-    
-        divisor.rotation.z = Math.PI / 2;
-        divisor.position.set(-19.5, 0, 0.1); // ligeiramente acima do chão
-
-        floor['upper'].position.set(-140 + i *floorWidth, 0.05, -180 );
-        floor['lower'].position.set(-140 + i *floorWidth, 0.05, 180);
+    if (i < 8) {
+      floor['upper'] = new THREE.Mesh(floorGeometry, floorMaterial);
+      if (i == 5) {
+        floor['lower'] = startLine;
+      } else {
+        floor['lower'] = new THREE.Mesh(floorGeometry, floorMaterial);
       }
-   
 
-      [floor['left'], floor['right'], floor['upper'],floor['lower']].forEach(block => {
-        block.rotation.x = -Math.PI / 2;
-        group.add(block);
-      })
+      floor['upper'].position.set(-210 + i * floorWidth, floorYAxis, -270);
+      floor['lower'].position.set(-210 + i * floorWidth, floorYAxis, 270);
+    }
+
+    [floor['left'], floor['right'], floor['upper'], floor['lower']].forEach(block => {
+      block.rotation.x = -Math.PI / 2;
+      group.add(block);
+    })
   }
-  
+
   return group;
 }
 
-let grid = new THREE.GridHelper(500, 40);
+let grid = new THREE.GridHelper(700, 40);
 scene.add(grid);
 scene.add(createrTrack1());
 
+    //  velocidades progressivas 
+function handleKeys(dt) {
+  const effectiveFrame = dt * 60;
+  
+  if (keys['1']) switchTrack(1);
+  if (keys['2']) switchTrack(2);
+
+  if (keys['arrowup'] || keys['x']) {
+    speed += acceleration * effectiveFrame; 
+    if (speed > maxSpeed) speed = maxSpeed;
+  } else if (keys['arrowdown']) {
+    speed -= (acceleration * 1.2) * effectiveFrame;
+    if (speed < -maxSpeed / 2) speed = -maxSpeed / 2;
+  } else {
+    // desaceleracao
+    speed *= Math.pow(0.988, effectiveFrame); 
+  }
+  const turnSpeed = 0.03 * effectiveFrame; 
+
+  if (keys['arrowleft']) {
+    car.rotation.y += turnSpeed;
+  } else if (keys['arrowright']) {
+    car.rotation.y -= turnSpeed;
+  }
+
+  // movimento
+  const moveSpeed = speed * effectiveFrame;
+  car.position.x -= Math.sin(car.rotation.y) * moveSpeed;
+  car.position.z -= Math.cos(car.rotation.y) * moveSpeed;
+}
+
+function updateCamera(dt) {
+  const effectiveFrame = dt * 60;
+  const relCameraOffset = new THREE.Vector3(0, 14, 30); 
+  const cameraOffset = relCameraOffset.applyMatrix4(car.matrixWorld);
+  const cameraFollowSpeed = 0.08 * effectiveFrame;
+
+  camera.position.lerp(cameraOffset, Math.min(cameraFollowSpeed, 1.0)); 
+  camera.lookAt(car.position);
+}
+
 function render() {
   requestAnimationFrame(render);
+
+  const deltaTime = clock.getDelta();
+
+  handleKeys(deltaTime);
+  updateCamera(deltaTime);
+
   renderer.render(scene, camera);
- 
 }
 
 render();
