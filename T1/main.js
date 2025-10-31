@@ -272,8 +272,8 @@ function updateCamera() {
 function render() {
   requestAnimationFrame(render);
   renderer.render(scene, camera);
-   handleKeys();
-   updateCamera();
+  handleKeys();
+  updateCamera();
 }
 
 render();
