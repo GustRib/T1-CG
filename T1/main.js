@@ -185,19 +185,17 @@ function createWall(x, y, z, orientation) {
   wall.rotation.x = Math.PI / 2;
   return wall;
 }
-
-
 function createrTrack1(){
 
 
   const floorGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
   const floorMaterial = setDefaultMaterial("#555555");
-
+  
   const divisorGeomtery = new THREE.PlaneGeometry(floorWidth, 1);
   const divisorMaterial = setDefaultMaterial("red");
 
-  let group = new THREE.Group();
-  let floor = { 'left': null, 'right': null, 'upper': null, 'lower': null };
+  let group = new THREE.Group();  
+  let floor = {'left': null, 'right': null, 'upper': null, 'lower': null};
 
   for (let i = 0; i < 10; i++) {
       floor['left'] = new THREE.Mesh(floorGeometry, floorMaterial);
@@ -245,16 +243,12 @@ function createrTrack1(){
       floor['right'].add(createWall(31, 0, -15,'h'));
     }
 
-      floor['upper'].position.set(-210 + i * floorWidth, floorYAxis, -270);
-      floor['lower'].position.set(-210 + i * floorWidth, floorYAxis, 270);
-    }
-
-    [floor['left'], floor['right'], floor['upper'], floor['lower']].forEach(block => {
-      block.rotation.x = -Math.PI / 2;
-      group.add(block);
-    })
+      [floor['left'], floor['right'], floor['upper'],floor['lower']].forEach(block => {
+        block.rotation.x = -Math.PI / 2;
+        group.add(block);
+      })
+  }
   
-
   return group;
 }
 
