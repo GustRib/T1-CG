@@ -7,7 +7,7 @@ import {
 
 let scene, renderer, camera, light, orbit;
 let track1, track2, currentTrack;
-const floorYAxis = 0.05;
+const floorYAxis = 0.01   ;
 const floorWidth = 60;
 const floorHeight = 60;
 let car, speed = 0, maxSpeed = 1.5, acceleration = 0.008;
@@ -163,22 +163,33 @@ let startLineGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
 let startLineMaterial = setDefaultMaterial("orange");
 let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
 
-function createWall(x, y, z) {
-  let halfWallsColors = ["red", "white"];
-
-  let wall = new THREE.Group();
-  let halfWallGeometry = new THREE.BoxGeometry(2, 20, 2);
-  let wallMaterial = (color) => setDefaultMaterial(color);
+function createWall(x, y, z, orientation) {
+  const halfWallsColors = ["red", "white"];
+  const wall = new THREE.Group();
+  const halfWallGeometry = new THREE.BoxGeometry(2, 5, 30);
 
   for (let i = 0; i < 2; i++) {
-    let halfWall = new THREE.Mesh(halfWallGeometry, wallMaterial(halfWallsColors[i]));
-    halfWall.position.set((x - 10) + i * 10, y, z);
+    const color = halfWallsColors[i];
+    const material = setDefaultMaterial(color);
+    const halfWall = new THREE.Mesh(halfWallGeometry, material);
+
+    if (orientation === 'h') wall.rotation.y = Math.PI / 2;
+
+    // Usa Z como deslocamento no eixo local
+    halfWall.position.set(x, 2.5, z + (i * 30)); // z é deslocamento "pra dentro"
     wall.add(halfWall);
   }
+
+  // Posiciona o grupo no espaço global
+
+  wall.rotation.x = Math.PI / 2;
   return wall;
 }
 
-function createrTrack1() {
+
+function createrTrack1(){
+
+
   const floorGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
   const floorMaterial = setDefaultMaterial("#555555");
 
@@ -189,19 +200,50 @@ function createrTrack1() {
   let floor = { 'left': null, 'right': null, 'upper': null, 'lower': null };
 
   for (let i = 0; i < 10; i++) {
-    floor['left'] = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor['right'] = new THREE.Mesh(floorGeometry, floorMaterial);
+      floor['left'] = new THREE.Mesh(floorGeometry, floorMaterial);
+      floor['right'] = new THREE.Mesh(floorGeometry, floorMaterial);
+ 
+      floor['left'].position.set(-270, floorYAxis, 270 - (i * (floorHeight)  ));
+      floor['left'].add(createWall(-31, 0, -15));
 
-    floor['left'].position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
-    floor['right'].position.set(270, floorYAxis, 270 - (i * (floorHeight)));
+      floor['right'].position.set(270, floorYAxis, 270 - (i * (floorHeight) ));
+      floor['right'].add(createWall(31, 0.0, -15.0));
+   
+      if( i < 9){
 
-    if (i < 8) {
-      floor['upper'] = new THREE.Mesh(floorGeometry, floorMaterial);
-      if (i == 5) {
-        floor['lower'] = startLine;
-      } else {
-        floor['lower'] = new THREE.Mesh(floorGeometry, floorMaterial);
-      }
+        if(i > 0){
+          floor['left'].add(createWall(31, 0, -15));
+          floor['right'].add(createWall(-31, 0, -15));
+        }
+
+        if(i < 8){
+          floor['upper'] = new THREE.Mesh(floorGeometry, floorMaterial);
+
+          if(i == 5){
+            floor['lower'] = startLine;
+          }else{
+            floor['lower'] = new THREE.Mesh(floorGeometry, floorMaterial);
+          }
+
+          floor['upper'].position.set(-210 + i *floorWidth, floorYAxis, -270);
+          floor['lower'].position.set(-210 + i *floorWidth, floorYAxis, 270);
+          
+          floor['upper'].add(createWall(-31, 0, -15,'h'));
+          floor['upper'].add(createWall(31, 0, -15,'h'));
+          floor['lower'].add(createWall(31, 0, -15,'h'));
+          floor['lower'].add(createWall(-31, 0, -15,'h'));
+        }
+    }
+
+    if(i == 0 ){
+      floor['left'].add(createWall(-31, 0, -15,'h'));
+      floor['right'].add(createWall(-31, 0, -15,'h'));
+    }
+
+    if(i == 9 ){
+      floor['left'].add(createWall(31, 0, -15,'h'));
+      floor['right'].add(createWall(31, 0, -15,'h'));
+    }
 
       floor['upper'].position.set(-210 + i * floorWidth, floorYAxis, -270);
       floor['lower'].position.set(-210 + i * floorWidth, floorYAxis, 270);
@@ -211,7 +253,7 @@ function createrTrack1() {
       block.rotation.x = -Math.PI / 2;
       group.add(block);
     })
-  }
+  
 
   return group;
 }
