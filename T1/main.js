@@ -162,8 +162,8 @@ car = createCar();
 scene.add(car);
 // ==== CARRO =====
 
-// camera.position.set(0, 10, 15);
-// camera.lookAt(car.position); 
+camera.position.set(0, 10, 15);
+camera.lookAt(car.position); 
 let startLineGeometry = new THREE.PlaneGeometry(floorWidth, floorHeight);
 let startLineMaterial = setDefaultMaterial("orange");
 let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
@@ -289,19 +289,10 @@ function handleKeys() {
 }
 
 
-function updateCamera() {
-  const relCameraOffset = new THREE.Vector3(0, 15, 45);
-  const cameraOffset = relCameraOffset.applyMatrix4(car.matrixWorld);
-  camera.position.lerp(cameraOffset, 0.1);
-  camera.lookAt(car.position);
-}
-
-
 function render() {
   requestAnimationFrame(render);
   renderer.render(scene, camera);
    handleKeys();
-  //  updateCamera();
 }
 
 render();
