@@ -405,25 +405,32 @@ function handleKeys(dt) {
   if (keys['1']) switchTrack(1);
   if (keys['2']) switchTrack(2);
 
-  if (keys['arrowup'] || keys['x']) {
-      // acelera pra frente
-      speed += acceleration * effectiveFrame;
+  let accelInput = 0;
+
+  if (keys['arrowup'] || keys['x']) accelInput += 1;    // aceleração pra frente
+  if (keys['arrowdown']) accelInput -= 1;               // aceleração pra trás/freio
+
+  // agora aplica aceleração de acordo com accelInput
+  if (accelInput > 0) {
+      // carro quer ir pra frente
+      speed += acceleration * effectiveFrame * accelInput;
       if (speed > maxSpeed) speed = maxSpeed;
-  } else if (keys['arrowdown']) {
-      // lógica de freio/reverso
+  } else if (accelInput < 0) {
+      // carro quer frear ou ir pra ré
       if (speed > 0) {
-          // está indo pra frente → freia
-          speed -= acceleration * 5 * effectiveFrame;
+          // freia pra frente
+          speed += acceleration * effectiveFrame * accelInput; // accelInput é negativo
           if (speed < 0) speed = 0;
       } else {
-          // está parado ou indo pra trás → acelera ré
-          speed -= acceleration * 1.2 * effectiveFrame;
-          if (speed < -maxSpeed / 3.5) speed = -maxSpeed / 3.5;
+          // acelera pra ré
+          speed += acceleration * effectiveFrame * accelInput;
+          if (speed < -maxSpeed/2) speed = -maxSpeed/2;
       }
   } else {
-      // desaceleração natural
+      // nenhuma tecla → desaceleração natural
       speed *= Math.pow(0.988, effectiveFrame);
   }
+
   const turnSpeed = 0.03 * effectiveFrame;
 
   if (keys['arrowleft']) {
