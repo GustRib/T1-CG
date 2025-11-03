@@ -22,7 +22,6 @@ const START_CENTER_TRACK = new THREE.Vector2(90, 270);
 
 // --- Colisão simples (AABB por wall) ---
 let wallAABBs = [];             
-const SPEED_MIN_FACTOR = 0.0;  
 
 // Cria Plano
 let plane = createGroundPlaneXZ(720, 720);
@@ -173,8 +172,8 @@ car.position.set(110, 0, 270);
 car.rotation.y = Math.PI / 2;
 scene.add(car);
 //  CARRO 
-// camera.position.set(0, 10, 15);
-// camera.lookAt(car.position);
+camera.position.set(0, 10, 15);
+camera.lookAt(car.position);
 // Cria Paredes
 function createWall(x, y, z, orientation, colors = ["white", "red"]) {
   const wall = new THREE.Group();
@@ -542,7 +541,7 @@ function render() {
   const deltaTime = clock.getDelta();
   handleKeys(deltaTime);
   resolveCollisionsAABB();
-  // updateCamera(deltaTime);
+  updateCamera(deltaTime);
   updateLapCounter();
   updateHUD();
   renderer.render(scene, camera);
