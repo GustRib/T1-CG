@@ -10,7 +10,7 @@ let trackNumber, currentTrack;
 const floorYAxis = 0.01;
 const floorWidth = 60;
 const floorHeight = 60;
-let car, speed = 0, maxSpeed = 1.5, acceleration = 0.008;
+let car, speed = 0, maxSpeed = 3, acceleration = 0.008;
 let keys = {};
 let clock = new THREE.Clock();
 let walls = [];
@@ -325,9 +325,6 @@ function createTrack1() {
   return group;
 }
 
-let grid = new THREE.GridHelper(720, 12);
-grid.position.y = floorYAxis + 1;
-scene.add(grid);
 scene.add(currentTrack = createTrack1());
 
 function resetCarPosition() {
@@ -360,71 +357,47 @@ function switchTrack(track) {
 }
 
 function resolveCollisionsAABB() {
-  if (finished || wallAABBs.length === 0) return;
 
-  // AABB do carro no frame atual
-  const carBB = new THREE.Box3().setFromObject(car);
+  const carRadius = 3.7;
+  const carSphere = new THREE.Sphere(car.position.clone(), carRadius);
 
-  // Frente do carro no plano XZ (com base na rotação Y)
-  const fwd = new THREE.Vector2(-Math.sin(car.rotation.y), -Math.cos(car.rotation.y)).normalize();
+  for (const wall of wallAABBs) {
+    if (wall.intersectsSphere(carSphere)) {
+      const closestPoint = wall.clampPoint(car.position.clone(), new THREE.Vector3());
+      const direction = car.position.clone().sub(closestPoint).normalize();
 
-  // Vamos aplicar a MAIOR redução entre todos os contatos do frame
-  let speedFactor = 1.0;
+      // empurra pra fora
+      car.position.copy(
+          closestPoint.addScaledVector(direction, carRadius + 0.1)
+      );
 
-  for (const w of wallAABBs) {
-    if (!carBB.intersectsBox(w)) continue;
+      // ângulo entre frente do carro e normal da parede
+      const carDir = new THREE.Vector3(
+          -Math.sin(car.rotation.y),
+          0,
+          -Math.cos(car.rotation.y)
+      ).normalize();
 
-    // Overlaps X/Z
-    const overlapX = Math.min(carBB.max.x, w.max.x) - Math.max(carBB.min.x, w.min.x);
-    const overlapZ = Math.min(carBB.max.z, w.max.z) - Math.max(carBB.min.z, w.min.z);
-    if (overlapX <= 0 || overlapZ <= 0) continue;
+      const angleRad = carDir.angleTo(direction);
+      const angleDeg = THREE.MathUtils.radToDeg(angleRad);
 
-    // Centros para decidir o sentido do empurrão
-    const carCenterX = (carBB.min.x + carBB.max.x) * 0.5;
-    const carCenterZ = (carBB.min.z + carBB.max.z) * 0.5;
-    const wallCenterX = (w.min.x + w.max.x) * 0.5;
-    const wallCenterZ = (w.min.z + w.max.z) * 0.5;
-
-    if (overlapX < overlapZ) {
-      // Empurra no X (desliza no Z)
-      const nx = (carCenterX >= wallCenterX) ? 1 : -1;   // normal ±X
-      car.position.x += nx * overlapX;
-      // Mantém a AABB do carro coerente após o empurrão
-      carBB.min.x += nx * overlapX;
-      carBB.max.x += nx * overlapX;
-
-      // Redução por ângulo (com a normal)
-      const n = new THREE.Vector2(nx, 0);
-      let dot = Math.max(-1, Math.min(1, fwd.dot(n)));
-      const angleDeg = Math.acos(dot) * 180 / Math.PI;   // 0..180
-
-      // Regra: <90° → 0%; 90° → 5%; 180° → 100%
-      if (angleDeg >= 90) {
-        const factor = Math.max(SPEED_MIN_FACTOR, 0.95 * (180 - angleDeg) / 90);
-        speedFactor = Math.min(speedFactor, factor);
+      let reductionFactor = 0;
+      if (angleDeg > 90) {
+          reductionFactor = (angleDeg - 90) / 90; // linear 0..1
       }
-    } else {
-      // Empurra no Z (desliza no X)
-      const nz = (carCenterZ >= wallCenterZ) ? 1 : -1;   // normal ±Z
-      car.position.z += nz * overlapZ;
-      carBB.min.z += nz * overlapZ;
-      carBB.max.z += nz * overlapZ;
 
-      const n = new THREE.Vector2(0, nz);
-      let dot = Math.max(-1, Math.min(1, fwd.dot(n)));
-      const angleDeg = Math.acos(dot) * 180 / Math.PI;
+      // reduz velocidade conforme ângulo
+      speed *= (1 - reductionFactor);
 
-      if (angleDeg >= 90) {
-        const factor = Math.max(SPEED_MIN_FACTOR, 0.95 * (180 - angleDeg) / 90);
-        speedFactor = Math.min(speedFactor, factor);
+      // opcional: reflete vetor de movimento
+      if (car.userData.velocity) {
+          const v = car.userData.velocity.clone();
+          const reflected = v.sub(direction.multiplyScalar(2 * v.dot(direction)));
+          car.userData.velocity.copy(reflected.multiplyScalar(0.5 * (1 - reductionFactor)));
       }
     }
   }
-
-  // Aplica a maior redução encontrada
-  speed *= speedFactor;
 }
-
 
 function handleKeys(dt) {
   const effectiveFrame = dt * 60;
@@ -433,14 +406,23 @@ function handleKeys(dt) {
   if (keys['2']) switchTrack(2);
 
   if (keys['arrowup'] || keys['x']) {
-    speed += acceleration * effectiveFrame;
-    if (speed > maxSpeed) speed = maxSpeed;
+      // acelera pra frente
+      speed += acceleration * effectiveFrame;
+      if (speed > maxSpeed) speed = maxSpeed;
   } else if (keys['arrowdown']) {
-    speed -= (acceleration * 1.2) * effectiveFrame;
-    if (speed < -maxSpeed / 2) speed = -maxSpeed / 2;
+      // lógica de freio/reverso
+      if (speed > 0) {
+          // está indo pra frente → freia
+          speed -= acceleration * 5 * effectiveFrame;
+          if (speed < 0) speed = 0;
+      } else {
+          // está parado ou indo pra trás → acelera ré
+          speed -= acceleration * 1.2 * effectiveFrame;
+          if (speed < -maxSpeed / 3.5) speed = -maxSpeed / 3.5;
+      }
   } else {
-    // desaceleracao
-    speed *= Math.pow(0.988, effectiveFrame);
+      // desaceleração natural
+      speed *= Math.pow(0.988, effectiveFrame);
   }
   const turnSpeed = 0.03 * effectiveFrame;
 
