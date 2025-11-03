@@ -13,7 +13,6 @@ const floorHeight = 60;
 let car, speed = 0, maxSpeed = 1.5, acceleration = 0.008;
 let keys = {};
 let clock = new THREE.Clock();
-let walls = [];
 let laps = -1;
 const totalLaps = 4;
 let finished = false;
@@ -210,13 +209,13 @@ function createTile(color) {
 }
 
 function createTrack2() {
-
-  const group = new THREE.Group();
-
-  for (let i = 0; i < 8; i++) {
+  const group = new THREE.Group(); 
+  
+  
+ for (let i = 0; i < 9; i++) {
     let tileLower;
     if (i == 5) {
-      tileLower = createTile("blue");
+      tileLower = createTile("orange");
       let startLineGeometry = new THREE.PlaneGeometry(10, 60);
       let startLineMaterial = setDefaultMaterial("white");
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
@@ -226,40 +225,81 @@ function createTrack2() {
     } else {
       tileLower = createTile();
     }
-    let tileUpper = createTile();
-    tileUpper.position.set(-210 + i * floorWidth, floorYAxis, -270);
     tileLower.position.set(-210 + i * floorWidth, floorYAxis, 270);
-    group.add(tileUpper, tileLower);
+    group.add(tileLower);
   }
 
   for (let i = 0; i < 10; i++) {
     let tileLeft = createTile();
-    let tileRight = createTile();
     tileLeft.position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
-    tileRight.position.set(270, floorYAxis, 270 - (i * (floorHeight)));
-    group.add(tileLeft, tileRight);
+    group.add(tileLeft);
   }
+
+  for (let i = 0; i < 5; i++) {
+    let tileUpperHalf = createTile();
+    let tileHalfRight = createTile();
+    tileHalfRight.position.set(270, floorYAxis, 210 - (i * (floorHeight)));
+    tileUpperHalf.position.set(-210 + i * floorWidth, floorYAxis, -270);
+    group.add(tileUpperHalf,tileHalfRight);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    let tileHalfLeft = createTile();
+    tileHalfLeft.position.set(30, floorYAxis, -210 + (i * (floorHeight)));
+    if(i < 3){
+      let tileHalfLower = createTile();
+      tileHalfLower.position.set(90 + i * floorWidth, floorYAxis, -30);
+      group.add( tileHalfLower,tileHalfLeft); 
+    }else{
+      group.add(tileHalfLeft);
+    }
+  }
+  
 
   //Paredes Externas
   for (let i = 0; i < 10; i++) {
-    let wall1 = createWall(-285 + i * 60, 0, -301, 'h', ['blue', 'white']);
-    let wall2 = createWall(-285 + i * 60, 0, 301, 'h', ['blue', 'white']);
-    let wall3 = createWall(-299, 0, 255 - i * 60, 'v', ['blue', 'white']);
-    let wall4 = createWall(299, 0, 255 - i * 60, 'v', ['blue', 'white']);
-    group.add(wall1, wall2, wall3, wall4);
-    walls.push(wall1, wall2, wall3, wall4);
+    let wall1 = createWall(-285 + i * 60, 0, 299,'h', ['white', 'blue']);
+    let wall2 = createWall(-299, 0, 255 - i * 60, 'v', ['white', 'blue']);
+    group.add(wall1, wall2);
+    addWallAABB(wall1);
+    addWallAABB(wall2);
+  }
+  for(let i = 0; i < 6; i++){
+    let wall1 = createWall(300, 0, 255 - i * 60, 'v', ['blue', 'white']);
+    let wall2 = createWall(-285 + i * 60, 0, -300, 'h', ['blue', 'white']);
+    group.add(wall1,wall2);
+    addWallAABB(wall1);
+    addWallAABB(wall2);
+  }
+  for(let i = 0; i < 4; i++){
+    let wall1 = createWall(76 + i * 60, 0, -61,'h', ['blue', 'white']);
+    let wall2 = createWall(60, 0, -285 + i * 60, 'v', ['blue', 'white']);
+    group.add(wall1, wall2);
+    addWallAABB(wall1);
+    addWallAABB(wall2);
   }
 
-  //Paredes Internas
-  for (let i = 0; i < 8; i++) {
-    let wall1 = createWall(-225 + i * 60, 0, -241, 'h', ['blue', 'white']);
-    let wall2 = createWall(-225 + i * 60, 0, 241, 'h', ['blue', 'white']);
-    let wall3 = createWall(-239, 0, 195 - i * 60, 'v', ['blue', 'white']);
-    let wall4 = createWall(239, 0, 195 - i * 60, 'v', ['blue', 'white']);
-    group.add(wall1, wall2, wall3, wall4);
-    walls.push(wall1, wall2, wall3, wall4);
+  // //Paredes Internas
+  for(let i = 0; i < 8; i++){
+    let wall1 = createWall(-225 + i * 60, 0, 239,'h', ['white', 'blue']);
+    let wall2 = createWall(-239, 0, 195 - i * 60, 'v', ['white', 'blue']);
+    group.add(wall1, wall2);
+    addWallAABB(wall1);
+    addWallAABB(wall2);    
   }
+  for(let i = 0; i < 4; i++){
+    let wall1 = createWall(15 + i * 60, 0, 0,'h', ['blue', 'white']);
+    let wall2 = createWall(239, 0, 15 + i * 60, 'v', ['blue', 'white']);
+    let wall3 = createWall(-224 + i * 60, 0, -239,'h', ['blue', 'white']);
+    let wall4 = createWall(0, 0, -224 + i * 60, 'v', ['blue', 'white']);
+    group.add(wall1, wall2,wall3,wall4);
+    addWallAABB(wall1);
+    addWallAABB(wall2);
+    addWallAABB(wall3);
+    addWallAABB(wall4);
 
+  }
+  
   return group;
 }
 
@@ -301,7 +341,6 @@ function createTrack1() {
     let wall3 = createWall(-299, 0, 255 - i * 60, 'v');
     let wall4 = createWall(299, 0, 255 - i * 60, 'v');
     group.add(wall1, wall2, wall3, wall4);
-    walls.push(wall1, wall2, wall3, wall4);
     addWallAABB(wall1);
     addWallAABB(wall2);
     addWallAABB(wall3);
@@ -315,7 +354,6 @@ function createTrack1() {
     let wall3 = createWall(-239, 0, 195 - i * 60, 'v');
     let wall4 = createWall(239, 0, 195 - i * 60, 'v');
     group.add(wall1, wall2, wall3, wall4);
-    walls.push(wall1, wall2, wall3, wall4);
     addWallAABB(wall1);
     addWallAABB(wall2);
     addWallAABB(wall3);
@@ -332,14 +370,13 @@ scene.add(currentTrack = createTrack1());
 
 function resetCarPosition() {
   car.position.set(110, 0, 270);
-  camera.position.set(90, 15, 285);
+  // camera.position.set(90, 15, 285);
   car.rotation.y = Math.PI / 2;
   speed = 0;
 }
 
 function switchTrack(track) {
   wallAABBs.length = 0;  // zera as caixas
-  walls.length = 0;
   laps = -1;
   finished = false;
   wasInsideStart = false;
@@ -516,7 +553,7 @@ function render() {
   const deltaTime = clock.getDelta();
   handleKeys(deltaTime);
   resolveCollisionsAABB();
-  updateCamera(deltaTime);
+  // updateCamera(deltaTime);
   updateLapCounter();
   updateHUD();
   renderer.render(scene, camera);
