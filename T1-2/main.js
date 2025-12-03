@@ -15,7 +15,7 @@ let trackNumber, currentTrack = new Track(1);
 let car, speed = 0, maxSpeed = 3, acceleration = 0.008;
 let keys = {};
 let clock = new THREE.Clock();
-let laps = -1;
+let laps = 0;
 const totalLaps = 4;
 let finished = false;
 let wasInsideStart = false;
@@ -38,8 +38,6 @@ light = initDefaultBasicLight(scene);
 scene.add(camera);
 orbit = new OrbitControls(camera, renderer.domElement);
 
-
-
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
@@ -52,8 +50,8 @@ car.rotation.y = Math.PI / 2;
 scene.add(car);
 
 // Inicializa câmera do carro
-camera.position.set(0, 10, 15);
-camera.lookAt(car.position);
+// camera.position.set(0, 10, 15);
+// camera.lookAt(car.position);
 
 //Inicializa a cena com a pista 1
 trackNumber = 1;
@@ -70,7 +68,7 @@ function resetCarPosition(track=1) {
 
 function switchTrack(track) {
   wallAABBs.length = 0;
-  laps = -1;
+  laps = 0;
   finished = false;
   wasInsideStart = false;
   if (currentTrack) scene.remove(currentTrack.getTrackGroup());
@@ -203,15 +201,42 @@ function updateCamera(dt) {
   camera.lookAt(car.position);
 }
 
+function updateCheckpointCounter() {
+  const carRadius = 3.7;
+  const carSphere = new THREE.Sphere(car.position.clone(), carRadius);
+  let checkPoints = currentTrack.getCheckpoints();
+  for (let checkPoint in checkPoints) {
+    let bb = new THREE.Box3().setFromObject(checkPoints[checkPoint].object);
+    if (bb.intersectsSphere(carSphere)) {
+      if (checkPoints[checkPoint].arrived === false) {
+        checkPoints[checkPoint].arrived = true;
+        console.log(`Checkpoint ${checkPoint} alcançado!`);
+      }
+    }
+  }
+}
+
 function updateLapCounter() {
   if (finished) return;
   const c = currentTrack.getStartCenter();
   const dx = car.position.x - c.x;
   const dz = car.position.z - c.y;
   const inside = (dx <= 5 && dz <= 30) && (dx >= -5 && dz >= -30);
-
-  if (inside && !wasInsideStart) {
+  let checkPointsArrived = true;
+  for (let checkPoint in currentTrack.getCheckpoints()) {
+    if(currentTrack.getCheckpoints()[checkPoint].arrived === false) {
+      console.log(currentTrack.getCheckpoints()[checkPoint]);
+      checkPointsArrived = false;
+      break;
+    }
+  }  
+  if (inside && !wasInsideStart && checkPointsArrived) {
     laps++;
+
+    for (let checkPoint in currentTrack.getCheckpoints()) {
+      currentTrack.getCheckpoints()[checkPoint].arrived = false;
+    }
+
     if (laps >= totalLaps) finished = true;
   }
   wasInsideStart = inside;
@@ -239,10 +264,21 @@ document.body.appendChild(hud);
 
 function updateHUD() {
   const kmh = Math.abs(speed) * 70; // Fator só pra "parecer" km/h
-  hud.textContent = `Velocidade: ${kmh.toFixed(1)} Km/h | Voltas: ${laps == -1 ? 0 : laps}/${totalLaps}` + (finished ? ' | FIM!' : '');
+
+  // Conta checkpoints do track atual
+  const checkpoints = currentTrack.getCheckpoints();
+  const totalCheckpoints = Object.keys(checkpoints).length;
+  let arrivedCheckpoints = 0;
+  for (let k in checkpoints) {
+    if (checkpoints[k].arrived) arrivedCheckpoints++;
+  }
+
+  const lapDisplay = (laps == -1 ? 0 : laps) + '/' + totalLaps;
+  hud.textContent = `Velocidade: ${kmh.toFixed(1)} Km/h | Voltas: ${lapDisplay} | Checkpoints: ${arrivedCheckpoints}/${totalCheckpoints}` + (finished ? ' | FIM!' : '');
 }
 
 const gridHelper = new THREE.GridHelper(720, 12);
+
 scene.add(gridHelper);
 
 function render() {
@@ -250,8 +286,9 @@ function render() {
   const deltaTime = clock.getDelta();
   handleKeys(deltaTime);
   resolveCollisionsAABB();
-  updateCamera(deltaTime);
+  // updateCamera(deltaTime);
   updateLapCounter();
+  updateCheckpointCounter()
   updateHUD();
   renderer.render(scene, camera);
   requestAnimationFrame(render);

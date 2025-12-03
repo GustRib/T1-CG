@@ -8,19 +8,41 @@ export class Track {
     wallAABBs = [];
     trackGroup;
     startCenter;
+    checkpoints = {};
+    checkPointsBoxes = [];
     constructor(trackNumber) {
         switch(trackNumber) {
             case 1:
-                this.trackGroup = createTrack1(this.wallAABBs);
                 this.startCenter = new THREE.Vector2(90, 270);
+                this.checkpoints = {
+                  '1': {orientation: 'v',position: new THREE.Vector2(-239, 270),object:{},arrived:false},
+                  '2': {orientation: 'h',position: new THREE.Vector2(270, 240),object:{},arrived:false},
+                  '3': {orientation: 'v',position: new THREE.Vector2(239, -270),object:{},arrived:false},
+                  '4': {orientation: 'h',position: new THREE.Vector2(-270, -239),object:{},arrived:false}
+                };
+                this.trackGroup = createTrack1(this.wallAABBs,this.checkpoints, this.checkPointsBoxes);
                 break;
             case 2:
-                this.trackGroup = createTrack2(this.wallAABBs);
                 this.startCenter = new THREE.Vector2(90, 270);
+                this.checkpoints = {
+                  '1': {orientation: 'v',position: new THREE.Vector2(-239, 270),object:{},arrived:false},
+                  '2': {orientation: 'h',position: new THREE.Vector2(270, 240),object:{},arrived:false},
+                  '3': {orientation: 'v',position: new THREE.Vector2(61, -30),object:{},arrived:false},
+                  '4': {orientation: 'v',position: new THREE.Vector2(-239, -270),object:{},arrived:false},
+                };
+                this.trackGroup = createTrack2(this.wallAABBs,this.checkpoints, this.checkPointsBoxes);
                 break;
             case 3:
-                this.trackGroup = createTrack3(this.wallAABBs);
                 this.startCenter = new THREE.Vector2(210, 270);
+                this.checkpoints = {
+                  '1': {orientation: 'v',position: new THREE.Vector2(60, 270),object:{},arrived:false},
+                  '2': {orientation: 'h',position: new THREE.Vector2(270, 240),object:{},arrived:false},
+                  '3': {orientation: 'h',position: new THREE.Vector2(30, -120),object:{},arrived:false},
+                  '4': {orientation: 'v',position: new THREE.Vector2(181, -30),object:{},arrived:false},
+                  '5': {orientation: 'v',position: new THREE.Vector2(-181, -30),object:{},arrived:false},
+                  '6': {orientation: 'v',position: new THREE.Vector2(-239, -270),object:{},arrived:false},
+                };
+                this.trackGroup = createTrack3(this.wallAABBs,this.checkpoints, this.checkPointsBoxes);
                 break;
             default:
                 this.trackGroup = createTrack1(this.wallAABBs);
@@ -39,6 +61,14 @@ export class Track {
 
     getStartCenter() {
         return this.startCenter;
+    }
+
+    getCheckpoints() {
+        return this.checkpoints;
+    }
+
+    getCheckPointsBoxes() {
+        return this.checkPointsBoxes;
     }
 }
 
@@ -79,7 +109,20 @@ function addWallAABB(wallGroup, wallAABBs) {
   return tile;
 }
 
- function createTrack1(wallAABBs) {
+function createCheckPointTile(orientation) {
+  const checkPointGeometry = new THREE.PlaneGeometry(60, 2);
+  const checkPointMaterial = setDefaultMaterial("#fffb00");
+  const checkPointTile = new THREE.Mesh(checkPointGeometry, checkPointMaterial);
+  if (orientation === 'v') {
+    checkPointTile.rotation.z = Math.PI / 2;
+  }
+  checkPointTile.rotation.x = -Math.PI / 2;
+  checkPointTile.position.y = floorYAxis;
+  return checkPointTile;
+}
+
+
+ function createTrack1(wallAABBs, checkpoints, checkPointsBoxes) {
 
   const group = new THREE.Group();
 
@@ -136,10 +179,19 @@ function addWallAABB(wallGroup, wallAABBs) {
     addWallAABB(wall4, wallAABBs);
   }
 
+  for(let checkPoint in checkpoints){
+    let cpTile = createCheckPointTile(checkpoints[checkPoint].orientation);
+    cpTile.position.set(checkpoints[checkPoint].position.x, floorYAxis + 0.02, checkpoints[checkPoint].position.y);
+    checkpoints[checkPoint].object = cpTile;
+    const box = new THREE.Box3().setFromObject(cpTile);
+    checkPointsBoxes.push(box);
+    group.add(cpTile);
+  }
+
   return group;
 }
 
- function createTrack2(wallAABBs) {
+ function createTrack2(wallAABBs, checkpoints, checkPointsBoxes) {
   const group = new THREE.Group(); 
   let colorFloor = "#313f50";
   
@@ -230,10 +282,19 @@ function addWallAABB(wallGroup, wallAABBs) {
 
   }
   
+  for(let checkPoint in checkpoints){
+    let cpTile = createCheckPointTile(checkpoints[checkPoint].orientation);
+    cpTile.position.set(checkpoints[checkPoint].position.x, floorYAxis + 0.02, checkpoints[checkPoint].position.y);
+    checkpoints[checkPoint].object = cpTile;
+    const box = new THREE.Box3().setFromObject(cpTile);
+    checkPointsBoxes.push(box);
+    group.add(cpTile);
+  }
+  
   return group;
 }
 
- function createTrack3(wallAABBs){
+ function createTrack3(wallAABBs,checkpoints, checkPointsBoxes){
     const group = new THREE.Group();
     let colorFloor = "#315035";
 
@@ -336,6 +397,15 @@ function addWallAABB(wallGroup, wallAABBs) {
         addWallAABB(wallUpperLower, wallAABBs);
         addWallAABB(wallLowerLeft, wallAABBs);
         addWallAABB(wallLowerRight, wallAABBs);
+    }
+
+    for(let checkPoint in checkpoints){
+      let cpTile = createCheckPointTile(checkpoints[checkPoint].orientation);
+      cpTile.position.set(checkpoints[checkPoint].position.x, floorYAxis + 0.02, checkpoints[checkPoint].position.y);
+      checkpoints[checkPoint].object = cpTile;
+      const box = new THREE.Box3().setFromObject(cpTile);
+      checkPointsBoxes.push(box);
+      group.add(cpTile);
     }
 
     return group;
