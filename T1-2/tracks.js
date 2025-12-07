@@ -195,8 +195,15 @@ function createCheckPointTile(orientation) {
 
   tunnel.rotation.x = -Math.PI / 2;
   tunnel.position.set(-269, 4, 0);
-
   group.add(tunnel);
+
+  let treesArea1 = createRandomTrees(10, {minX:-200, maxX:200, minZ:-200, maxZ:200}, 5);
+  let treesArea2 = createRandomTrees(10, {minX:-350, maxX:-310, minZ:-300, maxZ:300}, 5);
+  let treesArea3 = createRandomTrees(10, {minX: 310, maxX:350, minZ:-300, maxZ:300}, 5);
+  let treesArea4 = createRandomTrees(10, {minX:-300, maxX:300, minZ:-350, maxZ:-310}, 5);
+  let treesArea5 = createRandomTrees(10, {minX:-300, maxX:300, minZ:310, maxZ:350}, 5);
+
+  group.add(treesArea1,treesArea2,treesArea3, treesArea4, treesArea5);
   return group;
 }
 
@@ -304,10 +311,18 @@ function createCheckPointTile(orientation) {
 
   group.add(tunnel);
 
+  let treesArea1 = createRandomTrees(8, {minX:-200, maxX:200, minZ:20, maxZ:220}, 5);
+  let treesArea2 = createRandomTrees(5, {minX:-200, maxX:-20, minZ:-220, maxZ:-20}, 5);
+  let treesArea3 = createRandomTrees(8, {minX:-350, maxX:-310, minZ:-300, maxZ:300}, 5);
+  let treesArea4 = createRandomTrees(6, {minX: 310, maxX:350, minZ:30, maxZ:300}, 5);
+  let treesArea5 = createRandomTrees(6, {minX:-300, maxX:-30, minZ:-350, maxZ:-310}, 5);
+  let treesArea6 = createRandomTrees(8, {minX:-300, maxX:300, minZ:310, maxZ:350}, 5);
+  let treesArea7 = createRandomTrees(5, {minX:80, maxX:280, minZ:-350, maxZ:-80}, 5);
+
+  group.add(treesArea1,treesArea2,treesArea3, treesArea4, treesArea5, treesArea6, treesArea7);
+
   return group;
 }
-
-
 
  function createTrack3(wallAABBs,checkpoints, checkPointsBoxes, startCenter, tunnel){
     const group = new THREE.Group();
@@ -428,7 +443,16 @@ function createCheckPointTile(orientation) {
 
   group.add(tunnel);
 
-    return group;
+  let treesArea1 = createRandomTrees(5, {minX:80, maxX:220, minZ:20, maxZ:220}, 5);
+  let treesArea2 = createRandomTrees(5, {minX:-220, maxX:-20, minZ:-220, maxZ:-70}, 5);
+  let treesArea3 = createRandomTrees(10, {minX:-260, maxX: -20, minZ:20, maxZ:280}, 5);
+  let treesArea4 = createRandomTrees(10, {minX:70, maxX: 280, minZ:-280, maxZ:-70}, 5);
+
+
+
+  group.add(treesArea1,treesArea2,treesArea3,treesArea4);
+
+  return group;
 }
 
 function updateObject(mesh)
@@ -494,3 +518,107 @@ export function buildTunnel()
   return cylinder;
 }
 
+function createLowPolyTree(type = 1, options = {}) {
+  const g = new THREE.Group();
+  const trunkMat = setDefaultMaterial(options.trunkColor || "#6b3e1b");
+  const foliageMat1 = setDefaultMaterial(options.foliageColor || "#2f8b2f");
+  const foliageMat2 = setDefaultMaterial(options.foliageColor2 || "#2f8b2f");
+
+  // tronco base
+  const trunkHeight = options.trunkHeight || 1.6;
+  const trunkRadius = options.trunkRadius || 0.35;
+  const trunkGeom = new THREE.CylinderGeometry(trunkRadius, trunkRadius * 1.15, trunkHeight, 6);
+  const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+  trunk.position.y = trunkHeight / 2;
+  g.add(trunk);
+
+  // Foliage variants
+  if (type === 1) {
+    // 3 cones empilhados (árvore conífera clássica)
+    const sizes = [3.0, 2.2, 1.4];
+    let y = trunkHeight;
+    for (let i = 0; i < sizes.length; i++) {
+      const h = sizes[i] * 0.6;
+      const r = sizes[i] * 0.5;
+      const coneGeom = new THREE.ConeGeometry(r, h, 6);
+      const cone = new THREE.Mesh(coneGeom, i === 0 ? foliageMat2 : foliageMat1);
+      cone.position.y = y + h / 2 - 0.2 * i;
+      cone.rotation.y = (i % 2) * 0.3;
+      g.add(cone);
+      y += h * 0.35;
+    }
+  } else if (type === 2) {
+    // Bola low-poly (icosahedron)
+    const icoGeom = new THREE.IcosahedronGeometry(2.2, 0);
+    const ico = new THREE.Mesh(icoGeom, foliageMat1);
+    ico.position.y = trunkHeight + 1.4;
+    g.add(ico);
+
+    // pequena segunda bola
+    const ico2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 0), foliageMat2);
+    ico2.position.set(0.9, trunkHeight + 0.8, 0.2);
+    g.add(ico2);
+  } else if (type === 3) {
+    // Camadas quadradas (estilizada)
+    const layers = [2.6, 2.0, 1.2];
+    let y = trunkHeight + 0.2;
+    for (let i = 0; i < layers.length; i++) {
+      const s = layers[i];
+      const boxGeom = new THREE.BoxGeometry(s, s, s * 0.6);
+      const box = new THREE.Mesh(boxGeom, i === 1 ? foliageMat2 : foliageMat1);
+      box.position.y = y + (s * 0.3);
+      box.rotation.y = (i % 2) * 0.5;
+      g.add(box);
+      y += s * 0.35;
+    }
+  }
+
+  g.scale.set(options.scale, options.scale, options.scale);
+
+  return g;
+}
+
+function createRandomTrees(count = 20, area = {minX:-150, maxX:150, minZ:-150, maxZ:150}, size = 1) {
+  const group = new THREE.Group();
+  if (count <= 0) return group;
+
+  // Escolhe um grid quase quadrado para acomodar `count` células
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+
+  const areaWidth = Math.max(0.0001, area.maxX - area.minX);
+  const areaDepth = Math.max(0.0001, area.maxZ - area.minZ);
+
+  const cellW = areaWidth / cols;
+  const cellD = areaDepth / rows;
+
+  // padding dentro de cada célula para evitar árvores coladas nas bordas
+  const pad = Math.min(cellW, cellD) * 0.15;
+
+  // Gera lista de índices de células e embaralha para distribuir aleatoriamente
+  const cells = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) cells.push({c, r});
+  }
+  for (let i = cells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cells[i], cells[j]] = [cells[j], cells[i]];
+  }
+
+  // Cria até `count` árvores, uma por célula embaralhada
+  for (let i = 0; i < Math.min(count, cells.length); i++) {
+    const {c, r} = cells[i];
+    // posição aleatória dentro da célula (respeitando padding)
+    const x = area.minX + c * cellW + pad + Math.random() * Math.max(0, cellW - 2 * pad);
+    const z = area.minZ + r * cellD + pad + Math.random() * Math.max(0, cellD - 2 * pad);
+
+    const t = Math.floor(Math.random() * 3) + 1; // tipos 1..3 (como sua createLowPolyTree)
+    const tree = createLowPolyTree(t, { scale: size * (0.85 + Math.random() * 0.4) });
+
+    tree.position.set(x, floorYAxis, z);
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    group.add(tree);
+  }
+
+  return group;
+}
