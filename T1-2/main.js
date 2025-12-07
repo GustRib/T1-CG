@@ -6,12 +6,14 @@ import {
 } from "../libs/util/util.js";
 
 //Tracks and Tiles
-import { Track } from './tracks.js';
+import { Track, buildTunnel } from './tracks.js';
 
 //Car
 import { createCar } from './car.js';
+
+let tunnel = buildTunnel();
 let scene, renderer, camera, light, orbit;
-let trackNumber, currentTrack = new Track(1);
+let trackNumber, currentTrack = new Track(1, tunnel);
 let car, speed = 0, maxSpeed = 3, acceleration = 0.008;
 let keys = {};
 let clock = new THREE.Clock();
@@ -74,17 +76,17 @@ function switchTrack(track) {
   if (currentTrack) scene.remove(currentTrack.getTrackGroup());
 
   if (track === 1) {
-    currentTrack = new Track(1);
+    currentTrack = new Track(1, tunnel);
     trackNumber = 1;
     resetCarPosition()
   }
   if (track === 2) {
-    currentTrack = new Track(2);
+    currentTrack = new Track(2,tunnel);
     trackNumber = 2;
     resetCarPosition()
   }
   if (track === 3) {
-    currentTrack = new Track(3);
+    currentTrack = new Track(3,tunnel);
     trackNumber = 3;
     resetCarPosition(3)
   }
