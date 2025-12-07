@@ -304,8 +304,6 @@ function createCheckPointTile(orientation) {
 
   group.add(tunnel);
 
-  let trees = createRandomTrees();
-  group.add(trees);
   return group;
 }
 
