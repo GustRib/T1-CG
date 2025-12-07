@@ -108,7 +108,7 @@ function switchTrack(track) {
   laps1 = 0; laps2 = 0;
   raceFinished = false; winner = null;
   wasInsideStart1 = false; wasInsideStart2 = false;
-
+  winnerBanner.style.display = 'none';
   if (currentTrack) scene.remove(currentTrack.getTrackGroup());
 
   if (track === 1) {
