@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import Stats from '../build/jsm/libs/stats.module.js';
 import { OrbitControls } from '../build/jsm/controls/OrbitControls.js';
 import {
   initRenderer, initCamera, initDefaultBasicLight,
@@ -19,6 +20,8 @@ let finished = false;
 let wasInsideStart = false;
 let prevPos = new THREE.Vector3();
 const START_CENTER_TRACK = new THREE.Vector2(90, 270);
+
+
 
 // --- Colisão simples (AABB por wall) ---
 let wallAABBs = [];             
@@ -545,6 +548,7 @@ function updateHUD() {
 }
 
 function render() {
+  stats.update();
   prevPos.copy(car.position);
   const deltaTime = clock.getDelta();
   handleKeys(deltaTime);
