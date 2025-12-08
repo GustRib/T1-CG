@@ -74,9 +74,29 @@ plane.position.set(0, 0, 0);
 // Inicia cena
 scene = new THREE.Scene();
 renderer = initRenderer();
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombra suave
 renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 800, 0));
-light = initDefaultBasicLight(scene);
+// === LUZ PRINCIPAL (Segue o carro) ===
+const mainLight = new THREE.SpotLight("#ffffff", 1.2);
+mainLight.castShadow = true;
+
+// qualidade da sombra
+mainLight.shadow.mapSize.width = 1024;
+mainLight.shadow.mapSize.height = 1024;
+mainLight.shadow.camera.near = 5;
+mainLight.shadow.camera.far = 500;
+mainLight.shadow.camera.fov = 35;
+
+scene.add(mainLight);
+scene.add(mainLight.target); // Spotlight usa target separado
+
+// === LUZ SECUNDÁRIA (ambiente) ===
+const fillLight = new THREE.HemisphereLight("#ffffff", "#464646", 0.55);
+fillLight.castShadow = false;
+scene.add(fillLight);
+
 scene.add(camera);
 orbit = new OrbitControls(camera, renderer.domElement);
 
@@ -489,6 +509,15 @@ function render() {
   console.log(car2.position.x);
   
   updateHUDs();
+
+    mainLight.position.set(
+    car.position.x + 20,
+    car.position.y + 40,
+    car.position.z + 20
+  );
+
+  mainLight.target.position.copy(car.position);
+  
   renderer.render(scene, camera);
   if (raceFinished){
     resetCarPosition()

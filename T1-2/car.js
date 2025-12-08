@@ -33,6 +33,14 @@ export function createCar(type=1) {
     bevelThickness: carHeight * 0.45,
   };
 
+  carGroup.traverse(obj => {
+    if (obj.isMesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+    }
+});
+
+
   const baseGeom = new THREE.ExtrudeGeometry(racetrackShape, extrudeSettings);
   const baseRoxa = new THREE.Mesh(baseGeom, matBody);
 
