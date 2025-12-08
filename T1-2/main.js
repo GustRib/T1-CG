@@ -403,6 +403,8 @@ function render() {
   // aplicar física / colisões para ambos
   handleKeys(deltaTime); // controla apenas `car` (player)
   resolveCollisionsAABB();
+  updateCPU(deltaTime);   // IA do adversarío
+
 
   // atualizar checkpoints / voltas para cada carro
   updateCheckpointCounterFor(car, car1Checkpoints);
@@ -428,5 +430,60 @@ function render() {
   }
   requestAnimationFrame(render);
 }
+
+//  IA do Carro Adversário ---------
+
+let cpuTargetIndex = 0;
+let cpuMaxSpeed = 2.2;
+let cpuAcceleration = 0.004;
+
+function getCheckpointList() {
+    const cps = currentTrack.getCheckpoints();
+    const list = [];
+    for (let k in cps) list.push(cps[k].position.clone());
+    return list;
+}
+
+let cpuCheckpoints = getCheckpointList();
+
+function updateCPU(dt) {
+    if (raceFinished) return;
+
+    const effectiveFrame = dt * 60;
+
+    cpuCheckpoints = getCheckpointList();
+
+    let target = cpuCheckpoints[cpuTargetIndex];
+    if (!target) return;
+
+    const dir = target.clone().sub(car2.position);
+    const distance = dir.length();
+    dir.normalize();
+
+    // virar em direção ao checkpoint
+    const desiredAngle = Math.atan2(-dir.x, -dir.z);
+    let angleDiff = desiredAngle - car2.rotation.y;
+
+    angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
+
+    car2.rotation.y += angleDiff * 0.06 * effectiveFrame;
+
+    // velocidade do adversário
+    speed2 += cpuAcceleration * effectiveFrame;
+    if (speed2 > cpuMaxSpeed) speed2 = cpuMaxSpeed;
+
+    const moveSpeed = speed2 * effectiveFrame;
+
+    // movimento
+    car2.position.x -= Math.sin(car2.rotation.y) * moveSpeed;
+    car2.position.z -= Math.cos(car2.rotation.y) * moveSpeed;
+
+    // chegou no checkpoint?
+    if (distance < 12) {
+        cpuTargetIndex++;
+        if (cpuTargetIndex >= cpuCheckpoints.length) cpuTargetIndex = 0;
+    }
+}
+
 
 render();
