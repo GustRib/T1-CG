@@ -35,7 +35,15 @@ let wasInsideStart1 = false;
 let wasInsideStart2 = false;
 
 // --- Colisão simples (AABB por wall) ---
-let wallAABBs = [];             
+let wallAABBs = []; 
+
+// --- Shooting system state ---
+const shotsMax = 4;
+let shots1 = shotsMax, shots2 = shotsMax;
+let projectiles = [];
+let penaltyEndTime1 = 0, penaltyEndTime2 = 0;
+
+//Waypoints para IA do carro adversário
 const checkpointsList = {
   1: [
     new THREE.Vector3(-270, 0, 270),
@@ -162,6 +170,12 @@ function switchTrack(track) {
   cpuCheckpoints = getCheckpointList();
   if (currentTrack) scene.remove(currentTrack.getTrackGroup());
 
+  // limpar projéteis e resetar tiros/penalizações
+  for (const p of projectiles) scene.remove(p.mesh);
+  projectiles.length = 0;
+  shots1 = shotsMax; shots2 = shotsMax;
+  penaltyEndTime1 = 0; penaltyEndTime2 = 0;
+
   if (track === 1) {
     currentTrack = new Track(1, tunnel);
     trackNumber = 1;
@@ -190,7 +204,6 @@ function switchTrack(track) {
   cpuCheckpoints = getCheckpointList();
 }
 
-// resolve colisões para um carro específico (extrai de sua versão anterior)
 function resolveCollisionsAABB() {
 
   const carRadius = 3.7;
@@ -227,7 +240,7 @@ function resolveCollisionsAABB() {
     }
   }
 
-    for (const wall of currentTrack.getWallAABBs()) {
+  for (const wall of currentTrack.getWallAABBs()) {
     if (wall.intersectsSphere(car2Sphere)) {
       const closestPoint = wall.clampPoint(car2.position.clone(), new THREE.Vector3());
       const direction = car2.position.clone().sub(closestPoint).normalize();
@@ -253,7 +266,7 @@ function resolveCollisionsAABB() {
       }
 
       // Reduz velocidade conforme ângulo
-      speed *= (1 - reductionFactor);
+      speed2 *= (1 - reductionFactor);
     }
   }
 
@@ -301,8 +314,96 @@ function resolveCollisionsAABB() {
     speed *= damping;
     speed2 *= damping;
   }
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+      const p = projectiles[i];
+      const sphere = new THREE.Sphere(p.mesh.position.clone(), p.radius);
+  
+      // paredes
+      let hitWall = false;
+      for (const wall of currentTrack.getWallAABBs()) {
+        if (wall.intersectsSphere(sphere)) { hitWall = true; break; }
+      }
+      if (hitWall) {
+        destroyProjectile(i);
+        continue;
+      }
+  
+      // carros
+      const sCar1 = new THREE.Sphere(car.position.clone(), carRadius);
+      const sCar2 = new THREE.Sphere(car2.position.clone(), carRadius);
+  
+      if (p.owner === 'player') {
+        if (sphere.intersectsSphere(sCar2)) {
+          applyPenaltyTo(car2);
+          destroyProjectile(i);
+          continue;
+        }
+      } else {
+        if (sphere.intersectsSphere(sCar1)) {
+          applyPenaltyTo(car);
+          destroyProjectile(i);
+          continue;
+        }
+      }
+    }
 }
 
+
+// Helpers de projéteis
+function tryShootPlayer() {
+  if (raceFinished) return;
+  if (shots1 <= 0) return;
+  shots1--;
+  createProjectile(car, 'player');
+}
+
+function createProjectile(owner, ownerTag) {
+  const radius = 1.2;
+  const geom = new THREE.SphereGeometry(radius, 16, 12);
+  const mat = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x550000, shininess: 120 });
+  const mesh = new THREE.Mesh(geom, mat);
+
+  const forward = new THREE.Vector3(-Math.sin(owner.rotation.y), 0, -Math.cos(owner.rotation.y)).normalize();
+  mesh.position.copy(owner.position).addScaledVector(forward, 8);
+  mesh.position.y += 1.5;
+  scene.add(mesh);
+
+  projectiles.push({
+    mesh,
+    vel: forward.clone(),
+    radius,
+    owner: ownerTag
+  });
+}
+
+function destroyProjectile(index) {
+  const p = projectiles[index];
+  if (!p) return;
+  scene.remove(p.mesh);
+  projectiles.splice(index, 1);
+}
+
+function applyPenaltyTo(targetCar) {
+  const now = clock.getElapsedTime();
+  if (targetCar === car) {
+    speed *= 0.3;
+    penaltyEndTime1 = now + 3;
+  } else {
+    speed2 *= 0.3;
+    penaltyEndTime2 = now + 3;
+  }
+}
+
+function updateProjectiles(dt) {
+  const projectileSpeed = 260; // units/sec
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    // movimento apenas; colisões tratadas em resolveCollisionsAABB
+    p.mesh.position.addScaledVector(p.vel, projectileSpeed * dt);
+  }
+}
+let prevShootPressed = false;
 function handleKeys(dt) {
     const effectiveFrame = dt * 60;
 
@@ -313,10 +414,16 @@ function handleKeys(dt) {
 
     if(raceFinished) return;
 
-        // Controle de direção
+    // Controle de direção
     const turnSpeed = 0.03 * effectiveFrame;
     if (keys['arrowleft']) car.rotation.y += turnSpeed;
     if (keys['arrowright']) car.rotation.y -= turnSpeed;
+
+    const shootPressed = !!keys['z'];
+    if (shootPressed && !prevShootPressed) {
+      tryShootPlayer();
+    }
+    prevShootPressed = shootPressed;
 
     // Controle de aceleração/freio
     const accelerating = keys['arrowup'] || keys['x'];
@@ -397,6 +504,7 @@ function updateLapCounterFor(targetCar, carCheckpoints) {
   if (targetCar === car) {
     if (inside && !wasInsideStart1 && checkPointsArrived) {
       laps1++;
+      shots1 = shotsMax; // recarrega tiros a cada volta
       for (let k in carCheckpoints) carCheckpoints[k].arrived = false;
       if (laps1 >= totalLaps) { 
         raceFinished = true; 
@@ -408,6 +516,7 @@ function updateLapCounterFor(targetCar, carCheckpoints) {
   } else {
     if (inside && !wasInsideStart2 && checkPointsArrived) {
       laps2++;
+      shots2 = shotsMax; // recarrega tiros a cada volta
       for (let k in carCheckpoints) carCheckpoints[k].arrived = false;
       if (laps2 >= totalLaps) { 
         raceFinished = true; 
@@ -420,7 +529,7 @@ function updateLapCounterFor(targetCar, carCheckpoints) {
   return false;
 }
 
-// === INFO BOX ===
+/// === INFO BOX ===
 let infoBox = new InfoBox();
 infoBox.add("Rock 'n Roll Racing 3D - Protótipo");
 infoBox.addParagraph();
@@ -428,6 +537,7 @@ infoBox.add("Setas ← → : virar");
 infoBox.add("Setas ↑ / X : acelerar");
 infoBox.add("Seta ↓ : frear");
 infoBox.add("1, 2 e 3 : trocar de pista");
+infoBox.add("Z : atirar");
 infoBox.show();
 
 // === HUD de velocidade e voltas ===
@@ -465,8 +575,8 @@ function updateHUDs() {
   for (let k in car1Checkpoints) if (car1Checkpoints[k].arrived) arrived1++;
   for (let k in car2Checkpoints) if (car2Checkpoints[k].arrived) arrived2++;
 
-  hud1.textContent = `Jogador: Velocidade: ${kmh1.toFixed(1)} Km/h | Voltas: ${laps1}/${totalLaps} | CP: ${arrived1}/${totalCheckpoints}`;
-  hud2.textContent = `CPU : Velocidade: ${kmh2.toFixed(1)} Km/h | Voltas: ${laps2}/${totalLaps} | CP: ${arrived2}/${totalCheckpoints}`;
+  hud1.textContent = `Jogador: Velocidade: ${kmh1.toFixed(1)} Km/h | Voltas: ${laps1}/${totalLaps} | CP: ${arrived1}/${totalCheckpoints} | Tiros: ${shots1}/${shotsMax}`;
+  hud2.textContent = `CPU : Velocidade: ${kmh2.toFixed(1)} Km/h | Voltas: ${laps2}/${totalLaps} | CP: ${arrived2}/${totalCheckpoints} | Tiros: ${shots2}/${shotsMax}`;
 }
 
 const gridHelper = new THREE.GridHelper(720, 12);
@@ -496,6 +606,9 @@ function render() {
   updateCheckpointCounterFor(car, car1Checkpoints);
   updateCheckpointCounterFor(car2, car2Checkpoints);
 
+  // atualizar projéteis
+  updateProjectiles(deltaTime);
+
   // verifica fim de corrida (primeiro a completar)
   const finishedNow1 = updateLapCounterFor(car, car1Checkpoints);
   const finishedNow2 = updateLapCounterFor(car2, car2Checkpoints);
@@ -522,7 +635,7 @@ function render() {
   if (raceFinished){
     resetCarPosition()
   }else{
-    // updateCamera(deltaTime);
+    updateCamera(deltaTime);
   }
   requestAnimationFrame(render);
 }
