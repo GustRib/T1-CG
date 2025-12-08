@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import {setDefaultMaterial } from "../libs/util/util.js";
 // Cria carro 
-export function createCar() {
+export function createCar(type=1) {
   let carGroup = new THREE.Group();
-  const matBody = setDefaultMaterial("rgba(29, 27, 27, 0.49)");
-  const matDetail = setDefaultMaterial("rgba(212, 22, 22, 0.71)");
+  const matBody = type == 1? setDefaultMaterial("rgba(29, 27, 27, 0.49)") : new THREE.MeshLambertMaterial({color: "rgba(52, 52, 66, 0.49)"});
+  const matDetail = type == 1? setDefaultMaterial("rgba(212, 22, 22, 0.71)") : new THREE.MeshPhongMaterial({color: "rgba(84, 229, 255, 0.71)", shininess: 200, specular: "rgb(255, 255, 255)"});
   const carLength = 8.0;
   const carWidth = 6.0;
   const carHeight = 0.8;

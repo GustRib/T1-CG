@@ -36,6 +36,35 @@ let wasInsideStart2 = false;
 
 // --- Colisão simples (AABB por wall) ---
 let wallAABBs = [];             
+const checkpointsList = {
+  1: [
+    new THREE.Vector3(-270, 0, 270),
+    new THREE.Vector3(-270, 0, -270),
+    new THREE.Vector3(270, 0, -270),
+    new THREE.Vector3(270, 0, 270),
+  
+  ],
+  2: [
+    new THREE.Vector3(-270, 0, 270),
+    new THREE.Vector3(-270, 0, -270),
+    new THREE.Vector3(30, 0, -270),
+    new THREE.Vector3(30, 0, -20),
+    new THREE.Vector3(270, 0, -18),
+    new THREE.Vector3(270, 0, 270),
+
+
+
+  ],
+  3: [
+    new THREE.Vector3(30, 0, 250),
+    new THREE.Vector3(30, 0, -270),
+    new THREE.Vector3(-270, 0, -270),
+    new THREE.Vector3(-270, 0, -30),
+    new THREE.Vector3(270, 0, -30),
+    new THREE.Vector3(270, 0, 250),
+
+  ],
+};
 
 // Cria plano
 let plane = createGroundPlaneXZ(720, 720);
@@ -58,12 +87,13 @@ window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 scene.add(plane, currentTrack.getTrackGroup());
 
 // Cria dois carros
+let cpuCheckpoints = getCheckpointList() ; 
 car = createCar();
 car.position.set(110, 0, 275);
 car.rotation.y = Math.PI / 2;
 scene.add(car);
 
-car2 = createCar();
+car2 = createCar(2);
 car2.position.set(110, 0, 265); // posicione ligeiramente diferente
 car2.rotation.y = Math.PI / 2;
 scene.add(car2);
@@ -109,6 +139,7 @@ function switchTrack(track) {
   raceFinished = false; winner = null;
   wasInsideStart1 = false; wasInsideStart2 = false;
   winnerBanner.style.display = 'none';
+  cpuCheckpoints = getCheckpointList();
   if (currentTrack) scene.remove(currentTrack.getTrackGroup());
 
   if (track === 1) {
@@ -132,6 +163,11 @@ function switchTrack(track) {
   car2Checkpoints = cloneCheckpoints(currentTrack.getCheckpoints());
 
   scene.add(currentTrack.getTrackGroup());
+
+  // Atualiza checkpoints da IA com base na pista atual
+  trackNumber = trackNumber; // já ajustado acima ao criar Track
+  cpuTargetIndex = 0;
+  cpuCheckpoints = getCheckpointList();
 }
 
 // resolve colisões para um carro específico (extrai de sua versão anterior)
@@ -156,6 +192,36 @@ function resolveCollisionsAABB() {
           -Math.sin(car.rotation.y),
           0,
           -Math.cos(car.rotation.y)
+      ).normalize();
+
+      const angleRad = carDir.angleTo(direction);
+      const angleDeg = THREE.MathUtils.radToDeg(angleRad);
+
+      let reductionFactor = 0;
+      if (angleDeg > 90) {
+          reductionFactor = (angleDeg - 90) / 1080; // linear 0..1
+      }
+
+      // Reduz velocidade conforme ângulo
+      speed *= (1 - reductionFactor);
+    }
+  }
+
+    for (const wall of currentTrack.getWallAABBs()) {
+    if (wall.intersectsSphere(car2Sphere)) {
+      const closestPoint = wall.clampPoint(car2.position.clone(), new THREE.Vector3());
+      const direction = car2.position.clone().sub(closestPoint).normalize();
+
+      // Empurra pra fora
+      car2.position.copy(
+          closestPoint.addScaledVector(direction, carRadius)
+      );
+
+      // Ângulo entre frente do carro e normal da parede
+      const carDir = new THREE.Vector3(
+          -Math.sin(car2.rotation.y),
+          0,
+          -Math.cos(car2.rotation.y)
       ).normalize();
 
       const angleRad = carDir.angleTo(direction);
@@ -420,13 +486,14 @@ function render() {
     camera.position.copy(raceCamPos);
     camera.lookAt(0,0,0);
   }
-
+  console.log(car2.position.x);
+  
   updateHUDs();
   renderer.render(scene, camera);
   if (raceFinished){
     resetCarPosition()
   }else{
-    updateCamera(deltaTime);
+    // updateCamera(deltaTime);
   }
   requestAnimationFrame(render);
 }
@@ -434,24 +501,20 @@ function render() {
 //  IA do Carro Adversário ---------
 
 let cpuTargetIndex = 0;
-let cpuMaxSpeed = 2.2;
-let cpuAcceleration = 0.004;
+let cpuMaxSpeed = 2.4;
+let cpuAcceleration = 0.009;
+
+// Checkpoints estáticos por pista para a IA (ajuste as coordenadas conforme necessário)
 
 function getCheckpointList() {
-    const cps = currentTrack.getCheckpoints();
-    const list = [];
-    for (let k in cps) list.push(cps[k].position.clone());
-    return list;
+  return (checkpointsList[trackNumber] || []).map(v => v.clone());
 }
 
-let cpuCheckpoints = getCheckpointList();
 
 function updateCPU(dt) {
     if (raceFinished) return;
 
     const effectiveFrame = dt * 60;
-
-    cpuCheckpoints = getCheckpointList();
 
     let target = cpuCheckpoints[cpuTargetIndex];
     if (!target) return;
