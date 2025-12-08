@@ -509,25 +509,25 @@ export function buildTunnel()
   csgObject = csgObject.subtract(cylinderCSG2);
   //Cilindro Subtract Esferas
 
-    // sphereMesh.position.set(spherePositions[0].x, spherePositions[0].y, spherePositions[0].z);
-    // updateObject(sphereMesh);
-    // sphereCSG = CSG.fromMesh( sphereMesh );
-    // csgObject = csgObject.subtract(sphereCSG);
+  sphereMesh.position.set(spherePositions[0].x, spherePositions[0].y, spherePositions[0].z);
+  updateObject(sphereMesh);
+  sphereCSG = CSG.fromMesh( sphereMesh );
+  csgObject = csgObject.subtract(sphereCSG);
 
-    // sphereMesh.position.set(spherePositions[1].x, spherePositions[1].y, spherePositions[1].z);
-    // updateObject(sphereMesh);
-    // sphereCSG = CSG.fromMesh( sphereMesh );
-    // csgObject = csgObject.subtract(sphereCSG);
+  sphereMesh.position.set(spherePositions[1].x, spherePositions[1].y, spherePositions[1].z);
+  updateObject(sphereMesh);
+  sphereCSG = CSG.fromMesh( sphereMesh );
+  csgObject = csgObject.subtract(sphereCSG);
 
-    // sphereMesh.position.set(spherePositions[2].x, spherePositions[2].y, spherePositions[2].z);
-    // updateObject(sphereMesh);
-    // sphereCSG = CSG.fromMesh( sphereMesh );
-    // csgObject = csgObject.subtract(sphereCSG);
+  sphereMesh.position.set(spherePositions[2].x, spherePositions[2].y, spherePositions[2].z);
+  updateObject(sphereMesh);
+  sphereCSG = CSG.fromMesh( sphereMesh );
+  csgObject = csgObject.subtract(sphereCSG);
 
-    // sphereMesh.position.set(spherePositions[3].x, spherePositions[3].y, spherePositions[3].z);
-    // updateObject(sphereMesh);
-    // sphereCSG = CSG.fromMesh( sphereMesh );
-    // csgObject = csgObject.subtract(sphereCSG);
+  sphereMesh.position.set(spherePositions[3].x, spherePositions[3].y, spherePositions[3].z);
+  updateObject(sphereMesh);
+  sphereCSG = CSG.fromMesh( sphereMesh );
+    csgObject = csgObject.subtract(sphereCSG);
 
   let mesh1 = CSG.toMesh(csgObject, auxMat);
   mesh1.material = new THREE.MeshPhongMaterial({color: 'gray'});

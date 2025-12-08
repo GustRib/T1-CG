@@ -6,7 +6,7 @@ import {
   setDefaultMaterial, InfoBox, onWindowResize, createGroundPlaneXZ
 } from "../libs/util/util.js";
 
-//Tracks and Tiles
+//Tracks e Tiles
 import { Track, buildTunnel } from './tracks.js';
 
 //Car
@@ -37,7 +37,6 @@ let wasInsideStart2 = false;
 // --- Colisão simples (AABB por wall) ---
 let wallAABBs = []; 
 
-// --- Shooting system state ---
 const shotsMax = 4;
 let shots1 = shotsMax, shots2 = shotsMax;
 let projectiles = [];
@@ -87,10 +86,10 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombra suave
 renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 800, 0));
 // === LUZ PRINCIPAL DIRECIONAL (segue posição do carro sem rotacionar) ===
-// Directional light casts shadows; we will move it with the car but keep its direction constant
+
 const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
 mainLight.castShadow = true;
-// shadow quality / size
+
 mainLight.shadow.mapSize.width = 2048;
 mainLight.shadow.mapSize.height = 2048;
 mainLight.shadow.camera.near = 1;
@@ -102,7 +101,6 @@ mainLight.shadow.camera.top = shadowExtent;
 mainLight.shadow.camera.bottom = -shadowExtent;
 mainLight.shadow.bias = -0.0006; // reduce acne
 
-// Create a fixed-direction vector so light keeps same orientation while translating
 const lightDirection = new THREE.Vector3(-0.7, -1.0, -0.3).normalize();
 const mainLightTarget = new THREE.Object3D();
 scene.add(mainLightTarget);
@@ -119,7 +117,7 @@ fillDir.castShadow = false;
 scene.add(fillDir);
 
 scene.add(camera);
-orbit = new OrbitControls(camera, renderer.domElement);
+//orbit = new OrbitControls(camera, renderer.domElement);
 
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
@@ -409,16 +407,44 @@ function applyPenaltyTo(targetCar) {
 }
 
 function updateProjectiles(dt) {
-  const projectileSpeed = 260; // units/sec
+  const projectileSpeed = 480;
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
-    // movimento apenas; colisões tratadas em resolveCollisionsAABB
-    p.mesh.position.addScaledVector(p.vel, projectileSpeed * dt);
+    const startPos = p.mesh.position.clone();
+    const moveDist = projectileSpeed * dt;
+    const dir = p.vel.clone().normalize();
+    const endPos = startPos.clone().addScaledVector(dir, moveDist);
+
+    const ray = new THREE.Ray(startPos, dir);
+    let hit = false;
+    const tmpPoint = new THREE.Vector3();
+
+    const walls = currentTrack.getWallAABBs();
+    for (let w = 0; w < walls.length; w++) {
+      const box = walls[w];
+      const ip = ray.intersectBox(box, tmpPoint);
+      if (ip) {
+        const distToIP = ip.distanceTo(startPos);
+        if (distToIP <= moveDist + p.radius) {
+
+          destroyProjectile(i);
+          hit = true;
+          break;
+        }
+      }
+    }
+
+    if (hit) continue;
+
+    p.mesh.position.copy(endPos);
   }
 }
 let prevShootPressed = false;
 function handleKeys(dt) {
     const effectiveFrame = dt * 60;
+
+  const now = clock.getElapsedTime();
+  const playerPenalized = now < penaltyEndTime1;
 
     // Troca de pista
     if (keys['1']) switchTrack(1);
@@ -439,11 +465,12 @@ function handleKeys(dt) {
     prevShootPressed = shootPressed;
 
     // Controle de aceleração/freio
-    const accelerating = keys['arrowup'] || keys['x'];
-    const braking = keys['arrowdown'];
+  const accelerating = keys['arrowup'] || keys['x'];
+  const acceleratingEffective = accelerating && !playerPenalized;
+  const braking = keys['arrowdown'];
     const maxReverseSpeed = -maxSpeed / 2;
 
-    if (accelerating && !braking) {
+  if (acceleratingEffective && !braking) {
         // Acelerando normalmente
         speed += acceleration * effectiveFrame;
         if (speed > maxSpeed) speed = maxSpeed;
@@ -490,7 +517,6 @@ function updateCheckpointCounterFor(targetCar, carCheckpoints) {
     if (bb.intersectsSphere(carSphere)) {
       if (carCheckpoints[k].arrived === false) {
         carCheckpoints[k].arrived = true;
-        // console.log(`Car ${targetCar === car ? '1' : '2'} checkpoint ${k} reached`);
       }
     }
   }
@@ -634,10 +660,7 @@ function render() {
   }
   console.log(car2.position.x);
   
-  updateHUDs();
-
-    // Move the main light to follow the car (translation only). The light direction
-    // remains constant by placing the target at a fixed offset from the light.
+  updateHUDs()
     const lightPos = new THREE.Vector3(
       car.position.x + 20,
       car.position.y + 40,
@@ -661,6 +684,10 @@ function render() {
 let cpuTargetIndex = 0;
 let cpuMaxSpeed = 2.4;
 let cpuAcceleration = 0.009;
+
+let cpuLastShotTime = 0;
+let prevCpuAhead = false;
+const cpuShootInterval = 5.0; // segundos
 
 // Checkpoints estáticos por pista para a IA (ajuste as coordenadas conforme necessário)
 
@@ -689,9 +716,15 @@ function updateCPU(dt) {
 
     car2.rotation.y += angleDiff * 0.06 * effectiveFrame;
 
-    // velocidade do adversário
-    speed2 += cpuAcceleration * effectiveFrame;
-    if (speed2 > cpuMaxSpeed) speed2 = cpuMaxSpeed;
+    // tempo atual e penalidade do adversário
+    const now = clock.getElapsedTime();
+    const cpuPenalized = now < penaltyEndTime2;
+
+    // velocidade do adversário (bloqueada se penalizado)
+    if (!cpuPenalized) {
+      speed2 += cpuAcceleration * effectiveFrame;
+      if (speed2 > cpuMaxSpeed) speed2 = cpuMaxSpeed;
+    }
 
     const moveSpeed = speed2 * effectiveFrame;
 
@@ -703,6 +736,53 @@ function updateCPU(dt) {
     if (distance < 12) {
         cpuTargetIndex++;
         if (cpuTargetIndex >= cpuCheckpoints.length) cpuTargetIndex = 0;
+    }
+
+    try {
+      if (!raceFinished) {
+        const now = clock.getElapsedTime();
+
+        function computeProgress(laps, carCheckpointsObj, carObj) {
+          let arrived = 0;
+          let nextPos = null;
+          const keys = Object.keys(carCheckpointsObj).sort((a,b) => parseInt(a) - parseInt(b));
+          for (let k of keys) {
+            if (carCheckpointsObj[k].arrived) arrived++;
+            else { nextPos = carCheckpointsObj[k].position; break; }
+          }
+          let dist = 0;
+          if (nextPos) {
+            const cp = new THREE.Vector3(nextPos.x, carObj.position.y, nextPos.y);
+            dist = carObj.position.distanceTo(cp);
+          }
+
+          return (laps * 100000) + (arrived * 1000) + Math.max(0, 1000 - dist);
+        }
+
+        const playerProg = computeProgress(laps1, car1Checkpoints, car);
+        const cpuProg = computeProgress(laps2, car2Checkpoints, car2);
+
+        const cpuIsAhead = cpuProg > playerProg;
+        if (!prevCpuAhead && cpuIsAhead) {
+          if (shots2 > 0) {
+            createProjectile(car2, 'cpu');
+            shots2--;
+            cpuLastShotTime = now;
+          }
+        }
+
+        if (!cpuIsAhead && (now - cpuLastShotTime >= cpuShootInterval)) {
+          if (shots2 > 0) {
+            createProjectile(car2, 'cpu');
+            shots2--;
+            cpuLastShotTime = now;
+          }
+        }
+
+        prevCpuAhead = cpuIsAhead;
+      }
+    } catch (e) {
+      console.warn('CPU shooting logic error:', e);
     }
 }
 
