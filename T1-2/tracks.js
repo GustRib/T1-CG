@@ -204,6 +204,14 @@ function createCheckPointTile(orientation) {
   let treesArea5 = createRandomTrees(10, {minX:-300, maxX:300, minZ:310, maxZ:350}, 5);
 
   group.add(treesArea1,treesArea2,treesArea3, treesArea4, treesArea5);
+  // Ensure all meshes in the track group cast and receive shadows
+  group.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
   return group;
 }
 
@@ -320,6 +328,12 @@ function createCheckPointTile(orientation) {
   let treesArea7 = createRandomTrees(5, {minX:80, maxX:280, minZ:-350, maxZ:-80}, 5);
 
   group.add(treesArea1,treesArea2,treesArea3, treesArea4, treesArea5, treesArea6, treesArea7);
+  group.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
 
   return group;
 }
@@ -451,6 +465,12 @@ function createCheckPointTile(orientation) {
 
 
   group.add(treesArea1,treesArea2,treesArea3,treesArea4);
+  group.traverse(child => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
 
   return group;
 }

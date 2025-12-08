@@ -86,24 +86,37 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombra suave
 renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 800, 0));
-// === LUZ PRINCIPAL (Segue o carro) ===
-const mainLight = new THREE.SpotLight("#ffffff", 1.2);
+// === LUZ PRINCIPAL DIRECIONAL (segue posição do carro sem rotacionar) ===
+// Directional light casts shadows; we will move it with the car but keep its direction constant
+const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
 mainLight.castShadow = true;
+// shadow quality / size
+mainLight.shadow.mapSize.width = 2048;
+mainLight.shadow.mapSize.height = 2048;
+mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.far = 800;
+const shadowExtent = 220;
+mainLight.shadow.camera.left = -shadowExtent;
+mainLight.shadow.camera.right = shadowExtent;
+mainLight.shadow.camera.top = shadowExtent;
+mainLight.shadow.camera.bottom = -shadowExtent;
+mainLight.shadow.bias = -0.0006; // reduce acne
 
-// qualidade da sombra
-mainLight.shadow.mapSize.width = 1024;
-mainLight.shadow.mapSize.height = 1024;
-mainLight.shadow.camera.near = 5;
-mainLight.shadow.camera.far = 500;
-mainLight.shadow.camera.fov = 35;
-
+// Create a fixed-direction vector so light keeps same orientation while translating
+const lightDirection = new THREE.Vector3(-0.7, -1.0, -0.3).normalize();
+const mainLightTarget = new THREE.Object3D();
+scene.add(mainLightTarget);
+mainLight.target = mainLightTarget;
 scene.add(mainLight);
-scene.add(mainLight.target); // Spotlight usa target separado
 
-// === LUZ SECUNDÁRIA (ambiente) ===
-const fillLight = new THREE.HemisphereLight("#ffffff", "#464646", 0.55);
-fillLight.castShadow = false;
-scene.add(fillLight);
+// === LUZ DE PREENCHIMENTO / AMBIENTE (sem sombras) ===
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
+scene.add(hemi);
+// pequena luz direcional de preenchimento oposta à principal, sem sombras
+const fillDir = new THREE.DirectionalLight(0xffffff, 0.25);
+fillDir.position.set(-50, 30, -50);
+fillDir.castShadow = false;
+scene.add(fillDir);
 
 scene.add(camera);
 orbit = new OrbitControls(camera, renderer.domElement);
@@ -623,13 +636,16 @@ function render() {
   
   updateHUDs();
 
-    mainLight.position.set(
-    car.position.x + 20,
-    car.position.y + 40,
-    car.position.z + 20
-  );
-
-  mainLight.target.position.copy(car.position);
+    // Move the main light to follow the car (translation only). The light direction
+    // remains constant by placing the target at a fixed offset from the light.
+    const lightPos = new THREE.Vector3(
+      car.position.x + 20,
+      car.position.y + 40,
+      car.position.z + 20
+    );
+    mainLight.position.copy(lightPos);
+    mainLight.target.position.copy(lightPos).add(lightDirection);
+    mainLight.target.updateMatrixWorld();
   
   renderer.render(scene, camera);
   if (raceFinished){

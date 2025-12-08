@@ -33,12 +33,6 @@ export function createCar(type=1) {
     bevelThickness: carHeight * 0.45,
   };
 
-  carGroup.traverse(obj => {
-    if (obj.isMesh) {
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-    }
-});
 
 
   const baseGeom = new THREE.ExtrudeGeometry(racetrackShape, extrudeSettings);
@@ -123,6 +117,14 @@ export function createCar(type=1) {
   carGroup.add(antennaGroup);
 
   carGroup.position.y = 0.1;
+
+  // Ensure all meshes in the car cast and receive shadows
+  carGroup.traverse(obj => {
+    if (obj.isMesh) {
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+    }
+  });
 
   return carGroup;
 }
