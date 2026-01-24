@@ -12,9 +12,9 @@ import { Track, buildTunnel } from './tracks.js';
 //Car
 import { createCar } from './car.js';
 
-let tunnel = buildTunnel();
+// let tunnel = buildTunnel();
 let scene, renderer, camera, light, orbit;
-let trackNumber=1, currentTrack = new Track(1, tunnel);
+let trackNumber=1, currentTrack = new Track(1, null);
 
 const container = document.getElementById( 'container' );
 const stats = new Stats();
@@ -23,6 +23,9 @@ container.appendChild( stats.dom );
 let car, car2;                       // car = player (car1), car2 = opponent (estático por enquanto)
 let speed = 0, speed2 = 0;           // speed -> player, speed2 -> opponent (não se move agora)
 let maxSpeed = 3, acceleration = 0.008;
+let velocityY = 0, velocityY2 = 0;   // velocidade vertical (gravidade)
+const gravity = -0.10;               // aceleração para baixo
+const groundLevel = 5;               // altura do piso (carros iniciam em Y=5)
 
 let keys = {};
 let clock = new THREE.Clock();
@@ -41,6 +44,7 @@ const shotsMax = 4;
 let shots1 = shotsMax, shots2 = shotsMax;
 let projectiles = [];
 let penaltyEndTime1 = 0, penaltyEndTime2 = 0;
+let particles = []; // array de partículas ativas
 
 //Waypoints para IA do carro adversário
 const checkpointsList = {
@@ -63,18 +67,18 @@ const checkpointsList = {
 
   ],
   3: [
-    new THREE.Vector3(30, 0, 250),
-    new THREE.Vector3(30, 0, -270),
-    new THREE.Vector3(-270, 0, -270),
-    new THREE.Vector3(-270, 0, -30),
-    new THREE.Vector3(270, 0, -30),
-    new THREE.Vector3(270, 0, 250),
+    new THREE.Vector3(53, 0, 384),
+    new THREE.Vector3(30, 0, -370),
+    new THREE.Vector3(-360, 0, -370),
+    new THREE.Vector3(-365, 0, 5),
+    new THREE.Vector3(365, 0, 10),
+    new THREE.Vector3(370, 0, 370),
 
   ],
 };
 
 // Cria plano
-let plane = createGroundPlaneXZ(720, 720);
+let plane = createGroundPlaneXZ(960, 960);
 plane.material = setDefaultMaterial("#5b9452");
 plane.position.set(0, 0, 0);
 
@@ -117,23 +121,41 @@ fillDir.castShadow = false;
 scene.add(fillDir);
 
 scene.add(camera);
-//orbit = new OrbitControls(camera, renderer.domElement);
+orbit = new OrbitControls(camera, renderer.domElement);
 
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+// Função para pegar a posição do clique na tela
+window.addEventListener('click', (event) => {
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  
+  raycaster.setFromCamera(mouse, camera);
+  
+  // Raycast no plano Y=0 (chão)
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const intersection = new THREE.Vector3();
+  raycaster.ray.intersectPlane(plane, intersection);
+  
+  console.log(`Clique em: X: ${intersection.x.toFixed(2)}, Y: ${intersection.y.toFixed(2)}, Z: ${intersection.z.toFixed(2)}`);
+});
 
 scene.add(plane, currentTrack.getTrackGroup());
 
 // Cria dois carros
 let cpuCheckpoints = getCheckpointList() ; 
 car = createCar();
-car.position.set(110, 0, 275);
+car.position.set(110, 5, 275);
 car.rotation.y = Math.PI / 2;
 scene.add(car);
 
 car2 = createCar(2);
-car2.position.set(110, 0, 265); // posicione ligeiramente diferente
+car2.position.set(110, 5, 265); // posicione ligeiramente diferente
 car2.rotation.y = Math.PI / 2;
 scene.add(car2);
 
@@ -161,12 +183,16 @@ const raceCamPos = new THREE.Vector3(0, 400, 0);
 // Ajusta reset de posição para ambos os carros
 function resetCarPosition(track=1) {
   let xPos = 110;
-  if (track === 3) xPos = 230;
-  car.position.set(xPos, 0, 270);
+  let zPos = 250;
+  if (track === 3){ 
+    xPos = 290 
+    zPos = 370
+  }
+  car.position.set(xPos, 5, zPos+25);
   car.rotation.y = Math.PI / 2;
   speed = 0;
 
-  car2.position.set(xPos, 0, 260);
+  car2.position.set(xPos, 5, zPos+10);
   car2.rotation.y = Math.PI / 2;
   speed2 = 0;
 }
@@ -188,17 +214,17 @@ function switchTrack(track) {
   penaltyEndTime1 = 0; penaltyEndTime2 = 0;
 
   if (track === 1) {
-    currentTrack = new Track(1, tunnel);
+    currentTrack = new Track(1, null);
     trackNumber = 1;
     resetCarPosition()
   }
   if (track === 2) {
-    currentTrack = new Track(2,tunnel);
+    currentTrack = new Track(2,null);
     trackNumber = 2;
     resetCarPosition()
   }
   if (track === 3) {
-    currentTrack = new Track(3,tunnel);
+    currentTrack = new Track(3,null);
     trackNumber = 3;
     resetCarPosition(3)
   }
@@ -215,11 +241,26 @@ function switchTrack(track) {
   cpuCheckpoints = getCheckpointList();
 }
 
-function resolveCollisionsAABB() {
-
+function resolveCollisionsAABB(dt) {
+  const effectiveFrame = dt * 60;
   const carRadius = 3.7;
   const carSphere = new THREE.Sphere(car.position.clone(), carRadius);
   const car2Sphere = new THREE.Sphere(car2.position.clone(), carRadius);
+
+  // Detectar colisão com água
+  const waterAABBs = currentTrack.getWaterAABBs();
+  if (waterAABBs && waterAABBs.length > 0) {
+    for (const water of waterAABBs) {
+      if (water.intersectsSphere(carSphere)) {
+        createWaterParticles(car.position, speed, 5);
+        while(speed > maxSpeed * 0.92) speed *= 0.92
+      }
+      if (water.intersectsSphere(car2Sphere)) {
+        createWaterParticles(car2.position, speed2, 5);
+        while(speed2 > cpuMaxSpeed * 0.92) speed2 *= 0.92
+      }
+    }
+  }
 
   for (const wall of currentTrack.getWallAABBs()) {
     if (wall.intersectsSphere(carSphere)) {
@@ -357,7 +398,36 @@ function resolveCollisionsAABB() {
           continue;
         }
       }
+  }
+
+  currentTrack.getJumpPads().forEach(jumpPad => {
+    if (jumpPad.intersectsSphere(carSphere)) {
+      velocityY = 3.5; // impulso para cima
     }
+    if (jumpPad.intersectsSphere(car2Sphere)) {
+      velocityY2 = 4.5; // impulso para cima
+    }
+  })
+
+  // Aplicar gravidade
+  velocityY += gravity * effectiveFrame;
+  velocityY2 += gravity * effectiveFrame;
+  car.position.y += velocityY * effectiveFrame;
+  car2.position.y += velocityY2 * effectiveFrame;
+
+  currentTrack.getTilesAABBs().forEach(tile => {
+    if (tile.intersectsSphere(carSphere)) {
+      velocityY = 0; // anula gravidade
+      car.position.y = tile.max.y;
+    }
+
+    if (tile.intersectsSphere(car2Sphere)) {
+      velocityY2 = 0; // anula gravidade
+      car2.position.y = tile.max.y;
+    }
+
+  });
+
 }
 
 
@@ -439,7 +509,86 @@ function updateProjectiles(dt) {
     p.mesh.position.copy(endPos);
   }
 }
+
+// Função para obter altura do piso
+function getFloorHeightAt(x, z) {
+  const raycaster = new THREE.Raycaster();
+  const rayOrigin = new THREE.Vector3(x, 500, z);
+  const rayDirection = new THREE.Vector3(0, -1, 0).normalize();
+  raycaster.set(rayOrigin, rayDirection);
+  
+  const tilesAABBs = currentTrack.getTilesAABBs();
+  let maxHeight = -500;
+  const point = new THREE.Vector3();
+  
+  for (const tile of tilesAABBs) {
+    const intersection = raycaster.ray.intersectBox(tile, point);
+    if (intersection) {
+      const boxTop = tile.max.y;
+      if (boxTop > maxHeight) {
+        maxHeight = boxTop;
+      }
+    }
+  }
+  
+  return maxHeight > -500 ? maxHeight : 5;
+}
+
+// Sistema de partículas de água
+function createWaterParticles(position, carVelocity, count = 8) {
+  // Só gera partículas se o carro está se movendo
+  if (Math.abs(carVelocity) < 0.1) return;
+
+  for (let i = 0; i < count; i++) {
+    const particle = {
+      position: position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 15,
+        0,
+        (Math.random() - 0.5) * 15
+      )),
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.6,
+        Math.random() * 0.25 + 0.15,
+        (Math.random() - 0.5) * 0.6
+      ),
+      life: 1.0,
+      mesh: null
+    };
+
+    const geometry = new THREE.SphereGeometry(0.5, 4, 4);
+    const material = new THREE.MeshBasicMaterial({ color: 0x0099ff, transparent: true });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.copy(particle.position);
+    scene.add(mesh);
+    particle.mesh = mesh;
+
+    particles.push(particle);
+  }
+}
+
+// Atualizar partículas
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    
+    p.life -= dt * 2;
+    
+    if (p.life <= 0) {
+      scene.remove(p.mesh);
+      particles.splice(i, 1);
+      continue;
+    }
+
+    p.velocity.y -= 9.8 * dt;
+    p.position.addScaledVector(p.velocity, dt);
+    p.mesh.position.copy(p.position);
+    p.mesh.material.opacity = p.life;
+    p.mesh.scale.set(p.life, p.life, p.life);
+  }
+}
+
 let prevShootPressed = false;
+
 function handleKeys(dt) {
     const effectiveFrame = dt * 60;
 
@@ -618,13 +767,13 @@ function updateHUDs() {
   hud2.textContent = `CPU : Velocidade: ${kmh2.toFixed(1)} Km/h | Voltas: ${laps2}/${totalLaps} | CP: ${arrived2}/${totalCheckpoints} | Tiros: ${shots2}/${shotsMax}`;
 }
 
-const gridHelper = new THREE.GridHelper(720, 12);
+const gridHelper = new THREE.GridHelper(960, 16);
 
 scene.add(gridHelper);
 
 function updateCamera(dt) {
   const effectiveFrame = dt * 60;
-  const relCameraOffset = new THREE.Vector3(0, 14, 30);
+  const relCameraOffset = new THREE.Vector3(0, car.position.y+14, 30);
   const cameraOffset = relCameraOffset.applyMatrix4(car.matrixWorld);
   const cameraFollowSpeed = 0.08 * effectiveFrame;
 
@@ -637,16 +786,19 @@ function render() {
   const deltaTime = clock.getDelta();
   // aplicar física / colisões para ambos
   handleKeys(deltaTime); // controla apenas `car` (player)
-  resolveCollisionsAABB();
+  resolveCollisionsAABB(deltaTime);
   updateCPU(deltaTime);   // IA do adversarío
 
-
+  
   // atualizar checkpoints / voltas para cada carro
   updateCheckpointCounterFor(car, car1Checkpoints);
   updateCheckpointCounterFor(car2, car2Checkpoints);
 
   // atualizar projéteis
   updateProjectiles(deltaTime);
+
+  // atualizar partículas
+  updateParticles(deltaTime);
 
   // verifica fim de corrida (primeiro a completar)
   const finishedNow1 = updateLapCounterFor(car, car1Checkpoints);
@@ -658,17 +810,17 @@ function render() {
     camera.position.copy(raceCamPos);
     camera.lookAt(0,0,0);
   }
-  console.log(car2.position.x);
+  // console.log(car2.position.x);
   
   updateHUDs()
-    const lightPos = new THREE.Vector3(
-      car.position.x + 20,
-      car.position.y + 40,
-      car.position.z + 20
-    );
-    mainLight.position.copy(lightPos);
-    mainLight.target.position.copy(lightPos).add(lightDirection);
-    mainLight.target.updateMatrixWorld();
+  const lightPos = new THREE.Vector3(
+    car.position.x + 20,
+    car.position.y + 40,
+    car.position.z + 20
+  );
+  mainLight.position.copy(lightPos);
+  mainLight.target.position.copy(lightPos).add(lightDirection);
+  mainLight.target.updateMatrixWorld();
   
   renderer.render(scene, camera);
   if (raceFinished){
@@ -731,7 +883,7 @@ function updateCPU(dt) {
     // movimento
     car2.position.x -= Math.sin(car2.rotation.y) * moveSpeed;
     car2.position.z -= Math.cos(car2.rotation.y) * moveSpeed;
-
+ 
     // chegou no checkpoint?
     if (distance < 12) {
         cpuTargetIndex++;

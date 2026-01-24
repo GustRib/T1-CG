@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import {setDefaultMaterial } from "../libs/util/util.js";
 import { CSG } from '../libs/other/CSGMesh.js'   
+import { Water } from '../build/jsm/objects/Water.js';
 const floorYAxis = 0.01;
 const floorWidth = 60;
 const floorHeight = 60;
 
 export class Track {
     wallAABBs = [];
+    tilesAABBs = [];
+    waterAABBs = [];
+    jumpPads = [];
     trackGroup;
     startCenter;
     checkpoints = {};
@@ -23,7 +27,7 @@ export class Track {
                   '4': {orientation: 'h',position: new THREE.Vector2(-270, -239),object:{},arrived:false}
                 };
                 this.tunnel = tunnel;
-                this.trackGroup = createTrack1(this.wallAABBs,this.checkpoints, this.checkPointsBoxes, this.startCenter, this.tunnel);
+                this.trackGroup = createTrack1(this.wallAABBs, this.tilesAABBs, this.checkpoints, this.checkPointsBoxes, this.startCenter, this.tunnel);
                 break;
             case 2:
                 this.startCenter = new THREE.Vector2(90, 270);
@@ -34,20 +38,20 @@ export class Track {
                   '4': {orientation: 'v',position: new THREE.Vector2(-239, -270),object:{},arrived:false},
                 };
                 this.tunnel = tunnel;
-                this.trackGroup = createTrack2(this.wallAABBs,this.checkpoints, this.checkPointsBoxes, this.startCenter, this.tunnel);
+                this.trackGroup = createTrack2(this.wallAABBs, this.tilesAABBs, this.checkpoints, this.checkPointsBoxes, this.startCenter, this.tunnel, this.waterAABBs);
                 break;
             case 3:
-                this.startCenter = new THREE.Vector2(210, 270);
+                this.startCenter = new THREE.Vector2(270, 390);
                 this.checkpoints = {
-                  '1': {orientation: 'v',position: new THREE.Vector2(60, 270),object:{},arrived:false},
-                  '2': {orientation: 'h',position: new THREE.Vector2(270, 240),object:{},arrived:false},
-                  '3': {orientation: 'h',position: new THREE.Vector2(30, -120),object:{},arrived:false},
-                  '4': {orientation: 'v',position: new THREE.Vector2(181, -30),object:{},arrived:false},
-                  '5': {orientation: 'v',position: new THREE.Vector2(-181, -30),object:{},arrived:false},
-                  '6': {orientation: 'v',position: new THREE.Vector2(-239, -270),object:{},arrived:false},
+                  '1': {orientation: 'v',position: new THREE.Vector2(60, 390),object:{},arrived:false},
+                  '2': {orientation: 'h',position: new THREE.Vector2(390, 240),object:{},arrived:false},
+                  '3': {orientation: 'h',position: new THREE.Vector2(30, -350),object:{},arrived:false},
+                  '4': {orientation: 'v',position: new THREE.Vector2(181, 30),object:{},arrived:false},
+                  '5': {orientation: 'v',position: new THREE.Vector2(-281, 30),object:{},arrived:false},
+                  '6': {orientation: 'v',position: new THREE.Vector2(-239, -390),object:{},arrived:false},
                 };
                 this.tunnel = tunnel;
-                this.trackGroup = createTrack3(this.wallAABBs,this.checkpoints, this.checkPointsBoxes, this.startCenter, this.tunnel);
+                this.trackGroup = createTrack3(this.wallAABBs, this.tilesAABBs, this.checkpoints, this.checkPointsBoxes, this.startCenter, this.tunnel, this.jumpPads);
                 break;
             default:
                 this.trackGroup = createTrack1(this.wallAABBs);
@@ -58,6 +62,18 @@ export class Track {
 
     getWallAABBs() {
         return this.wallAABBs;
+    }
+
+    getTilesAABBs() {
+        return this.tilesAABBs;
+    }
+
+    getWaterAABBs() {
+        return this.waterAABBs;
+    }
+
+    getJumpPads() {
+        return this.jumpPads;
     }
 
     getTrackGroup() {
@@ -80,6 +96,7 @@ export class Track {
 
 // Cria Paredes
  function createWall(x, y, z, orientation, colors = ["white", "red"]) {
+    y = y == 0 ? 10 : y;
     const wall = new THREE.Group();
     const halfGeom = new THREE.BoxGeometry(2, 5, 30);
     
@@ -87,11 +104,11 @@ export class Track {
         const mat = setDefaultMaterial(colors[i % 2]);
     const half = new THREE.Mesh(halfGeom, mat);
     if (orientation === 'v') {
-      half.position.set(x, 2.5, z + i * 30);
+      half.position.set(x, 7.5, z + i * 30);
       half.userData.orient = 'v';
     } else {
       half.rotation.y = Math.PI / 2;
-      half.position.set(x + i * 30, 2.5, z);
+      half.position.set(x + i * 30, 7.5, z);
       half.userData.orient = 'h';
     }
     wall.add(half);
@@ -104,9 +121,25 @@ function addWallAABB(wallGroup, wallAABBs) {
   wallAABBs.push(bb);
 }
 
+function addTileAABB(tile, tilesAABBs) {
+  const bb = new THREE.Box3().setFromObject(tile);
+  tilesAABBs.push(bb);
+}
+
+function addWaterAABB(water, waterAABBs) {
+  const bb = new THREE.Box3().setFromObject(water);
+  waterAABBs.push(bb);
+}
+
+function addJumpPad(jumpPad, jumpPads) {
+  const bb = new THREE.Box3().setFromObject(jumpPad);
+  jumpPads.push(bb);
+}
+
  function createTile(color) {
   const tileSize = 60;
-  const tileGeometry = new THREE.PlaneGeometry(tileSize, tileSize);
+  // const tileGeometry = new THREE.PlaneGeometry(tileSize, tileSize);
+  const tileGeometry = new THREE.BoxGeometry( 60, 60, 10 );
   const tileMaterial1 = setDefaultMaterial(color || "#553030");
   const tile = new THREE.Mesh(tileGeometry, tileMaterial1);
   tile.rotation.x = -Math.PI / 2;
@@ -115,7 +148,7 @@ function addWallAABB(wallGroup, wallAABBs) {
 }
 
 function createCheckPointTile(orientation) {
-  const checkPointGeometry = new THREE.PlaneGeometry(60, 2);
+  const checkPointGeometry = new THREE.BoxGeometry(60, 2, 10);
   const checkPointMaterial = setDefaultMaterial("#fffb00");
   const checkPointTile = new THREE.Mesh(checkPointGeometry, checkPointMaterial);
   if (orientation === 'v') {
@@ -126,8 +159,16 @@ function createCheckPointTile(orientation) {
   return checkPointTile;
 }
 
+function createJumpPad(position) {
+  const jumpPadGeometry = new THREE.BoxGeometry(60, 10, 10);
+  const jumpPadMaterial = setDefaultMaterial("#e100ff");
+  const jumpPad = new THREE.Mesh(jumpPadGeometry, jumpPadMaterial);
+  jumpPad.rotation.x = -Math.PI / 2;
+  return jumpPad;
+}
 
- function createTrack1(wallAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel) {
+
+ function createTrack1(wallAABBs, tilesAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel) {
 
   const group = new THREE.Group();
 
@@ -135,7 +176,7 @@ function createCheckPointTile(orientation) {
     let tileLower;
     if (i == 5) {
       tileLower = createTile("orange");
-      let startLineGeometry = new THREE.PlaneGeometry(10, 60);
+      let startLineGeometry = new THREE.BoxGeometry(10, 60,10);
       let startLineMaterial = setDefaultMaterial("white");
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
       startLine.rotation.x = -Math.PI / 2;
@@ -148,6 +189,8 @@ function createCheckPointTile(orientation) {
     tileUpper.position.set(-210 + i * floorWidth, floorYAxis, -270);
     tileLower.position.set(-210 + i * floorWidth, floorYAxis, 270);
     group.add(tileUpper, tileLower);
+    addTileAABB(tileUpper, tilesAABBs);
+    addTileAABB(tileLower, tilesAABBs);
   }
 
   for (let i = 0; i < 10; i++) {
@@ -156,11 +199,13 @@ function createCheckPointTile(orientation) {
     tileLeft.position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
     tileRight.position.set(270, floorYAxis, 270 - (i * (floorHeight)));
     group.add(tileLeft, tileRight);
+    addTileAABB(tileLeft, tilesAABBs);
+    addTileAABB(tileRight, tilesAABBs);
   }
 
   //Paredes Externas
   for (let i = 0; i < 10; i++) {
-    let wall1 = createWall(-285 + i * 60, 0, -301);
+    let wall1 = createWall(-285 + i * 60, 15, -301);
     let wall2 = createWall(-285 + i * 60, 0, 301);
     let wall3 = createWall(-299, 0, 255 - i * 60, 'v');
     let wall4 = createWall(299, 0, 255 - i * 60, 'v');
@@ -193,9 +238,9 @@ function createCheckPointTile(orientation) {
     group.add(cpTile);
   }
 
-  tunnel.rotation.x = -Math.PI / 2;
-  tunnel.position.set(-269, 4, 0);
-  group.add(tunnel);
+  // tunnel.rotation.x = -Math.PI / 2;
+  // tunnel.position.set(-269, 4, 0);
+  // group.add(tunnel);
 
   let treesArea1 = createRandomTrees(10, {minX:-200, maxX:200, minZ:-200, maxZ:200}, 5);
   let treesArea2 = createRandomTrees(10, {minX:-350, maxX:-310, minZ:-300, maxZ:300}, 5);
@@ -215,7 +260,7 @@ function createCheckPointTile(orientation) {
   return group;
 }
 
- function createTrack2(wallAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel) {
+ function createTrack2(wallAABBs, tilesAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel, waterAABBs = []) {
   const group = new THREE.Group(); 
   let colorFloor = "#313f50";
   
@@ -223,7 +268,7 @@ function createCheckPointTile(orientation) {
     let tileLower;
     if (i == 5) {
       tileLower = createTile("orange");
-      let startLineGeometry = new THREE.PlaneGeometry(10, 60);
+      let startLineGeometry = new THREE.BoxGeometry(10, 60, 10);
       let startLineMaterial = setDefaultMaterial("white");
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
       startLine.rotation.x = -Math.PI / 2;
@@ -234,12 +279,25 @@ function createCheckPointTile(orientation) {
     }
     tileLower.position.set(-210 + i * floorWidth, floorYAxis, 270);
     group.add(tileLower);
+    addTileAABB(tileLower, tilesAABBs);
   }
 
   for (let i = 0; i < 10; i++) {
-    let tileLeft = createTile(colorFloor);
+    let tileLeft
+    let tileUnderWater;
+    if(i >= 2 && i <= 7){
+      tileLeft = createWaterTile();
+      tileUnderWater = createTile(colorFloor);
+      tileUnderWater.position.set(-270, -0.8, 270 - (i * (floorHeight)));
+      tileLeft.position.set(-270, 5, 270 - (i * (floorHeight)));
+      group.add(tileUnderWater);
+      addWaterAABB(tileLeft, waterAABBs);
+    }else{
+    tileLeft = createTile(colorFloor);
     tileLeft.position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
+    }
     group.add(tileLeft);
+    addTileAABB(tileLeft, tilesAABBs);
   }
 
   for (let i = 0; i < 5; i++) {
@@ -248,6 +306,8 @@ function createCheckPointTile(orientation) {
     tileHalfRight.position.set(270, floorYAxis, 210 - (i * (floorHeight)));
     tileUpperHalf.position.set(-210 + i * floorWidth, floorYAxis, -270);
     group.add(tileUpperHalf,tileHalfRight);
+    addTileAABB(tileUpperHalf, tilesAABBs);
+    addTileAABB(tileHalfRight, tilesAABBs);
   }
 
   for (let i = 0; i < 4; i++) {
@@ -256,16 +316,19 @@ function createCheckPointTile(orientation) {
     if(i < 3){
       let tileHalfLower = createTile(colorFloor);
       tileHalfLower.position.set(90 + i * floorWidth, floorYAxis, -30);
-      group.add( tileHalfLower,tileHalfLeft); 
+      group.add( tileHalfLower,tileHalfLeft);
+      addTileAABB(tileHalfLower, tilesAABBs);
+      addTileAABB(tileHalfLeft, tilesAABBs);
     }else{
       group.add(tileHalfLeft);
+      addTileAABB(tileHalfLeft, tilesAABBs);
     }
   }
   
   //Paredes Externas
   for (let i = 0; i < 10; i++) {
     let wall1 = createWall(-285 + i * 60, 0, 299,'h', ['white', 'blue']);
-    let wall2 = createWall(-299, 0, 255 - i * 60, 'v', ['white', 'blue']);
+    let wall2 = createWall(-299, 10, 255 - i * 60, 'v', ['white', 'blue']);
     group.add(wall1, wall2);
     addWallAABB(wall1,wallAABBs);
     addWallAABB(wall2,wallAABBs);
@@ -314,10 +377,10 @@ function createCheckPointTile(orientation) {
     checkPointsBoxes.push(box);
     group.add(cpTile);
   }
-  tunnel.rotation.x = -Math.PI / 2;
-  tunnel.position.set(-269, 4, 0);
+  // tunnel.rotation.x = -Math.PI / 2;
+  // tunnel.position.set(-269, 4, 0);
 
-  group.add(tunnel);
+  // group.add(tunnel);
 
   let treesArea1 = createRandomTrees(8, {minX:-200, maxX:200, minZ:20, maxZ:220}, 5);
   let treesArea2 = createRandomTrees(5, {minX:-200, maxX:-20, minZ:-220, maxZ:-20}, 5);
@@ -338,112 +401,119 @@ function createCheckPointTile(orientation) {
   return group;
 }
 
- function createTrack3(wallAABBs,checkpoints, checkPointsBoxes, startCenter, tunnel){
+ function createTrack3(wallAABBs, tilesAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel, jumpPads=this.jumpPads) {
     const group = new THREE.Group();
     let colorFloor = "#315035";
 
-    for (let i = 0; i < 10; i++) {
+    for(let i=0; i<14; i++){
+        if(i <= 8 || i >= 12){
         let tileMiddle = createTile(colorFloor);
-        let tileLower = createTile(colorFloor);
-        let tileUpper = createTile(colorFloor);
-        if(i <5){
-            if (i == 3) {
-                tileLower = createTile("orange");
-                let startLineGeometry = new THREE.PlaneGeometry(10, 60);
-                let startLineMaterial = setDefaultMaterial("white");
-                let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
-                startLine.rotation.x = -Math.PI / 2;
-                startLine.position.set(floorWidth/2 + i * floorWidth, floorYAxis + 0.02, 270);
-                group.add(startLine);
-            }
-            tileLower.position.set(floorWidth/2 + i * floorWidth, floorYAxis, 270);
-            tileUpper.position.set(-270 + i * floorWidth, floorYAxis, -270);
-            group.add(tileUpper, tileLower);
-
-        }
-
-        tileMiddle.position.set(-270 + i * floorWidth, floorYAxis, -30);
+        tileMiddle.position.set(30, floorYAxis, 390 - i * floorHeight);
         group.add(tileMiddle);
-    }
-
-    for(let i = 0; i < 4; i++){
-        let tileLeftUpper = createTile(colorFloor);
-        let tileLeftLower = createTile(colorFloor);
-        let tileRightUpper = createTile(colorFloor);
-        let tileRightLower = createTile(colorFloor);
-
-        if(i < 3){
-            tileLeftUpper.position.set(-270, floorYAxis, -210 + i * floorHeight);
-            group.add(tileLeftUpper);
+        addTileAABB(tileMiddle, tilesAABBs);
         }
 
-        if(i< 4){           
-            tileRightUpper.position.set(30, floorYAxis, -270 + i * floorHeight);
-            group.add(tileRightUpper);
+        if(i == 7){
+          let jumpPadGeometry = new THREE.BoxGeometry(60,10,5)
+          let jumpPadMaterial = setDefaultMaterial("pink")
+          let jumpPad = new THREE.Mesh(jumpPadGeometry, jumpPadMaterial)
+          jumpPad.position.set(30, 0 , -121)
+          group.add(jumpPad)
+          addJumpPad(jumpPad, jumpPads)
         }
 
+        if(i<7){
+          let tileLeftUpper = createTile(colorFloor);
+          let tileLeftLower = createTile(colorFloor);
+          let tileRightUpper = createTile(colorFloor);
+          let tileRightLower = createTile(colorFloor);
+          
+          tileLeftUpper.position.set(-390 + i * floorHeight, floorYAxis, -390);
+          tileLeftLower.position.set(-390 + i * floorHeight, floorYAxis, 30);
+          tileRightUpper.position.set(30 + i * floorHeight, floorYAxis, 30);
+          if(i==4){
+            tileRightLower = createTile("orange");
+            let startLineGeometry = new THREE.BoxGeometry(10, 10, 60);
+            let startLineMaterial = setDefaultMaterial("white");
+            let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
+            startLine.position.set(startCenter.x, floorYAxis + 0.02, startCenter.y);
+            group.add(startLine);
+          }
+          tileRightLower.position.set(30 + i * floorHeight, floorYAxis, 390);
+          group.add(tileLeftUpper, tileLeftLower, tileRightUpper,tileRightLower);
+          addTileAABB(tileLeftUpper, tilesAABBs)
+          addTileAABB(tileLeftLower, tilesAABBs)
+          addTileAABB(tileRightUpper, tilesAABBs)
+          addTileAABB(tileRightLower, tilesAABBs)
+        }
 
-        tileLeftLower.position.set(30, floorYAxis, 210 - i * floorHeight);
-        tileRightLower.position.set(270, floorYAxis, 210 - i * floorHeight);
-        group.add( tileLeftLower, tileRightLower);
+        if(i < 6){  
+          let tileLeftUpper = createTile(colorFloor);
+          let tileRightLower = createTile(colorFloor);
+          tileLeftUpper.position.set(-390, floorYAxis, -30 - i * floorHeight);
+          tileRightLower.position.set(390, floorYAxis, 30 + i * floorHeight);
+          group.add(tileLeftUpper, tileRightLower);
+          addTileAABB(tileLeftUpper, tilesAABBs)
+          addTileAABB(tileRightLower, tilesAABBs)
+        }
 
     }
 
-    //Paredes Externas
-    for(let i=0; i<4; i++){
-        let wallUpperRight = createWall(61, 0, -107 - i * floorHeight, 'v', ['white', 'green']);
-        let wallLowerUpper = createWall(75 + i * floorWidth, 0, -61,'h', ['white', 'green']);
-        group.add(wallUpperRight, wallLowerUpper);
+    // Paredes Externas
+    for(let i=0; i<8; i++){
+        let wallLeft = createWall(-419, 0, -405 + i * floorHeight, 'v', ['white', 'green']);
+        let wallLeftUpper = createWall(-405 + i * floorHeight, 0, -419, 'h', ['white', 'green']);
+        group.add(wallLeft,wallLeftUpper);
+        addWallAABB(wallLeft, wallAABBs);
+        addWallAABB(wallLeftUpper, wallAABBs);
+    }
+
+    for(let i=0; i<7; i++){
+        let wallUpperRight = createWall(61, 0, -45 - i * floorHeight, 'v', ['white', 'green']);
+        let wallUpperLeft = createWall(-405 + i * floorHeight, 0, 61, 'h', ['white', 'green']);
+        let wallLowerRight = createWall(15 + i * floorHeight, 0, 420, 'h', ['white', 'green']);
+        let wallLowerRight2 = createWall(419, 0, 375 - i * floorHeight, 'v', ['white', 'green']);
+        group.add(wallUpperRight, wallUpperLeft, wallLowerRight,wallLowerRight2);
         addWallAABB(wallUpperRight, wallAABBs);
-        addWallAABB(wallLowerUpper, wallAABBs);
-    }
-
-    for(let i=0; i<5; i++){
-        let wallLower = createWall(15 + i * floorWidth, 0, 301,'h', ['white', 'green']);
-        let wallLowerLeft = createWall(-1, 0, 17+i * floorWidth, 'v', ['white', 'green']);
-        let wallUpperLower = createWall(-285 + i * floorWidth, 0, 1, 'h', ['green', 'white']);
-        let wallUpperLeft = createWall(-299, 0, -45 - i * floorHeight, 'v', ['green', 'white']);
-        group.add(wallLower, wallLowerLeft, wallUpperLower, wallUpperLeft);
-        addWallAABB(wallLower, wallAABBs);
-        addWallAABB(wallLowerLeft, wallAABBs);
-        addWallAABB(wallUpperLower, wallAABBs);
         addWallAABB(wallUpperLeft, wallAABBs);
+        addWallAABB(wallLowerRight, wallAABBs);
+        addWallAABB(wallLowerRight2, wallAABBs);
     }
 
     for(let i=0; i<6; i++){
-        let wallLowerRight = createWall(299, 0, 255 - i * floorHeight, 'v', ['white', 'green']);
-        let wallUpper = createWall(-285 + i * floorWidth, 0, -301, 'h', ['green', 'white']);
-        group.add(wallLowerRight, wallUpper);
-        addWallAABB(wallLowerRight, wallAABBs);
-        addWallAABB(wallUpper, wallAABBs);
+      let wallLowerLeft = createWall(1, 0, 375 - i * floorHeight, 'v', ['green', 'white']);
+      let wallLowerUpper = createWall(75 + i * floorHeight, 0, -1, 'h', ['green', 'white']);
+      group.add(wallLowerLeft, wallLowerUpper);
+      addWallAABB(wallLowerLeft, wallAABBs);
+      addWallAABB(wallLowerUpper, wallAABBs);
     }
 
-    //Paredes Internas
-    for(let i=0; i<3; i++){
-        let wallUpperRight = createWall(-1, 0, -225 + i * floorHeight,'v', ['white','green']);
-        let wallUpperLeft = createWall(-239, 0, -225 + i * floorHeight, 'v', ['green','white']);
-        let wallLower = createWall(75 + i * floorWidth, 0, 239,'h', ['white', 'green']);
-        let wallLowerUpper = createWall(75 + i * floorWidth, 0, 1, 'h', ['green', 'white']);
-        group.add(wallUpperLeft, wallUpperRight, wallLower, wallLowerUpper);
-        addWallAABB(wallUpperLeft, wallAABBs);
-        addWallAABB(wallUpperRight, wallAABBs);
-        addWallAABB(wallLower, wallAABBs);
-        addWallAABB(wallLowerUpper, wallAABBs);
-    }
-
-    for(let i=0; i<4; i++){
-        let wallUpper = createWall(-225 + i * floorWidth, 0, -239,'h', ['green', 'white']);
-        let wallUpperLower = createWall(-225 + i * floorWidth, 0, -61,'h', ['white', 'green']);
-        let wallLowerLeft = createWall(61, 0, 15 + i * floorHeight,'v', ['green', 'white']);
-        let wallLowerRight = createWall(239, 0, 15 + i * floorHeight,'v', ['white', 'green']);
-        group.add(wallUpper, wallUpperLower, wallLowerLeft, wallLowerRight);
-        addWallAABB(wallUpper, wallAABBs);
-        addWallAABB(wallUpperLower, wallAABBs);
-        addWallAABB(wallLowerLeft, wallAABBs);
-        addWallAABB(wallLowerRight, wallAABBs);
+    // Paredes Internas
+    for(let i = 0; i<5; i++){
+      let wallLowerDown = createWall(75 + i * floorHeight, 0, 360, 'h', ['white', 'green']);
+      let wallLowerUp = createWall(75 + i * floorHeight, 0, 61, 'h', ['green', 'white']);
+      let wallLowerLeft = createWall(61, 0, 75 + i * floorHeight, 'v', ['green','white']);
+      let wallLowerRight = createWall(360, 0, 75 + i * floorHeight, 'v', ['white','green']);
+      group.add(wallLowerDown, wallLowerUp,wallLowerLeft, wallLowerRight);
+      addWallAABB(wallLowerDown, wallAABBs);
+      addWallAABB(wallLowerUp, wallAABBs);
+      addWallAABB(wallLowerLeft, wallAABBs);
+      addWallAABB(wallLowerRight, wallAABBs);
     }
     
+    for(let i = 0; i<6; i++){
+      let wallUpperLeft = createWall(-360, 0, -345 + i * floorHeight, 'v', ['white', 'green']);
+      let wallUpperRight = createWall(-1, 0, -345 + i * floorHeight, 'v', ['green', 'white']);
+      let wallUpperDown = createWall(-346 + i * floorHeight, 0, -359, 'h', ['white', 'green']);
+      let wallUpperUp = createWall(-345 + i * floorHeight, 0, -1, 'h', ['green', 'white']);
+      group.add(wallUpperLeft, wallUpperRight, wallUpperDown, wallUpperUp);
+      addWallAABB(wallUpperLeft, wallAABBs);
+      addWallAABB(wallUpperRight, wallAABBs);
+      addWallAABB(wallUpperDown, wallAABBs);
+      addWallAABB(wallUpperUp, wallAABBs);
+    }
 
+    
     for(let checkPoint in checkpoints){
       let cpTile = createCheckPointTile(checkpoints[checkPoint].orientation);
       cpTile.position.set(checkpoints[checkPoint].position.x, floorYAxis + 0.02, checkpoints[checkPoint].position.y);
@@ -452,15 +522,15 @@ function createCheckPointTile(orientation) {
       checkPointsBoxes.push(box);
       group.add(cpTile);
     }
-  tunnel.rotation.x = -Math.PI / 2;
-  tunnel.position.set(30, 4, 120);
+  // tunnel.rotation.x = -Math.PI / 2;
+  // tunnel.position.set(30, 4, 120);
 
-  group.add(tunnel);
+  // group.add(tunnel);
 
-  let treesArea1 = createRandomTrees(5, {minX:80, maxX:220, minZ:20, maxZ:220}, 5);
-  let treesArea2 = createRandomTrees(5, {minX:-220, maxX:-20, minZ:-220, maxZ:-70}, 5);
-  let treesArea3 = createRandomTrees(10, {minX:-260, maxX: -20, minZ:20, maxZ:280}, 5);
-  let treesArea4 = createRandomTrees(10, {minX:70, maxX: 280, minZ:-280, maxZ:-70}, 5);
+  let treesArea1 = createRandomTrees(5, {minX:80, maxX:330, minZ:70, maxZ:350}, 5);
+  let treesArea2 = createRandomTrees(10, {minX:-330, maxX:-20, minZ:-320, maxZ:-70}, 5);
+  let treesArea3 = createRandomTrees(10, {minX:-370, maxX: -20, minZ:70, maxZ:330}, 5);
+  let treesArea4 = createRandomTrees(10, {minX:90, maxX: 330, minZ:-360, maxZ:-30}, 5);
 
 
 
@@ -597,6 +667,30 @@ function createLowPolyTree(type = 1, options = {}) {
 
   return g;
 }
+
+
+function createWaterTile(){
+  const waterGeometry = new THREE.PlaneGeometry( 60, 60);
+
+  // Water shader parameters
+  let water = new Water(
+    waterGeometry,
+    {
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals: new THREE.TextureLoader().load( '../assets/textures/NormalMapping/waternormals.jpg', function ( texture ) {
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      } ),
+      sunDirection: new THREE.Vector3(),
+      sunColor: 0xffffff,
+      waterColor: 0x001e0f,
+      distortionScale: 2,
+    }
+  );
+  water.rotation.x = - Math.PI / 2;
+  return water;
+}
+
 
 function createRandomTrees(count = 20, area = {minX:-150, maxX:150, minZ:-150, maxZ:150}, size = 1) {
   const group = new THREE.Group();
