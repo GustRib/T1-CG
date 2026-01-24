@@ -428,6 +428,14 @@ function resolveCollisionsAABB(dt) {
 
   });
 
+    if(trackNumber){
+      if(car.position.y < -2){
+        car.position.set(30, 5, 190)
+      }else if(car2.position.y < -2){
+        car2.position.set(35, 5, 190)
+      }
+    }
+
 }
 
 
