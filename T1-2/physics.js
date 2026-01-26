@@ -5,7 +5,7 @@ import * as THREE from 'three';
 export function resolveCollisionsAABB(dt, {
   cars, carSpeeds, carVelocityY, currentTrack, maxSpeed, cpuMaxSpeed,
   gravity, projectiles, carPenaltyEndTime, scene, createWaterParticles,
-  applyPenaltyTo, destroyProjectile
+  applyPenaltyTo, destroyProjectile, particles
 }) {
   const effectiveFrame = dt * 60;
   const carRadius = 3.7;
@@ -19,7 +19,7 @@ export function resolveCollisionsAABB(dt, {
     for (let i = 0; i < cars.length; i++) {
       for (const water of waterAABBs) {
         if (water.intersectsSphere(carSpheres[i])) {
-          createWaterParticles(cars[i].position, carSpeeds[i], 5);
+          createWaterParticles(cars[i].position, carSpeeds[i], 5, {scene, particles});
           while(carSpeeds[i] > (i === 0 ? maxSpeed : cpuMaxSpeed) * 0.92) 
             carSpeeds[i] *= 0.92;
         }

@@ -292,7 +292,7 @@ function render() {
     cars, carSpeeds, carVelocityY, currentTrack, maxSpeed, cpuMaxSpeed,
     gravity, projectiles, carPenaltyEndTime, scene, createWaterParticles,
     applyPenaltyTo: (idx) => applyPenaltyTo(idx, { carSpeeds, carPenaltyEndTime, clock }),
-    destroyProjectile: (idx) => destroyProjectile(idx, { scene, projectiles })
+    destroyProjectile: (idx) => destroyProjectile(idx, { scene, projectiles }), particles
   });
 
   // Update AI
