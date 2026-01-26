@@ -12,43 +12,57 @@ import { Track, buildTunnel } from './tracks.js';
 //Car
 import { createCar } from './car.js';
 
+// --- CONFIGURAÇÕES GERAIS ---
+const NUM_CPUS = 3; 
+const TOTAL_CARS = 1 + NUM_CPUS; // 1 Player + N CPUs
+const PLAYER_IDX = 0; // Jogador é sempre o índice 0
 
-// --- NOVO: Variáveis de controle de jogo e áudio ---
+// --- Variáveis de controle de jogo e áudio ---
 let gameLoaded = false;
-let raceStarted = false; // Impede movimento durante contagem
+let raceStarted = false; 
 let startSoundBuffer = null;
 const audioListener = new THREE.AudioListener();
 const soundPlayer = new THREE.Audio(audioListener);
 const shootSound = new THREE.Audio(audioListener);
 const hitSound = new THREE.Audio(audioListener);
-const finalLapSound = new THREE.Audio(audioListener); // Som de "Final Lap!"
-// Controle de Música
-let musicPlayer = new THREE.Audio(audioListener); // Usa o mesmo listener da câmera
-let musicBuffers = {}; // Armazena os buffers das 3 músicas
-let musicEnabled = true; // Estado do som (Ligado/Desligado)
-let musicVolume = 0.3; // Volume mais baixo para não ofuscar os efeitos
+const finalLapSound = new THREE.Audio(audioListener); 
+let musicPlayer = new THREE.Audio(audioListener); 
+let musicBuffers = {}; 
+let musicEnabled = true; 
+let musicVolume = 0.3; 
 let shootBuffer = null;
 let hitBuffer = null;
 let finalLapBuffer = null;
-// --- NOVO: Loading Manager ---
+
+// --- Loading Manager ---
 const loadingManager = new THREE.LoadingManager(() => {
-    // Quando tudo carregar:
     const loadingScreen = document.getElementById('loading-screen');
     const loaderText = document.getElementById('loader');
     const startBtn = document.getElementById('start-btn');
     
-    loaderText.style.display = 'none';
-    startBtn.style.display = 'block';
+    if(loaderText) loaderText.style.display = 'none';
+    if(startBtn) startBtn.style.display = 'block';
 
-    // O navegador exige interação do usuário para tocar áudio
-    startBtn.addEventListener('click', () => {
-        loadingScreen.classList.add('fade-out');
-        setTimeout(() => loadingScreen.remove(), 500);
-        gameLoaded = true;
-        
-        // Inicia a contagem da primeira pista
-        startCountdown(); 
-    });
+    if(startBtn) {
+        startBtn.addEventListener('click', () => {
+            if(loadingScreen) {
+                loadingScreen.classList.add('fade-out');
+                setTimeout(() => loadingScreen.remove(), 500);
+            }
+            gameLoaded = true;
+            
+            // --- CORREÇÃO AQUI ---
+            // Garante que o contexto de áudio esteja ativo (navegadores bloqueiam autoplay)
+            if (audioListener.context.state === 'suspended') {
+                audioListener.context.resume();
+            }
+            
+            // Toca a música da pista 1
+            playTrackMusic(1); 
+            
+            startCountdown(); 
+        });
+    }
 });
 
 // Textures
@@ -59,199 +73,145 @@ grassTexture.repeat.set(8, 8);
 grassTexture.anisotropy = 16;
 const skyTexture = textureLoader.load('../assets/textures/skybox/panorama1.jpg');
 
+// Audio Loading
+const audioLoader = new THREE.AudioLoader(loadingManager);
+// Ajuste os caminhos se necessário, mantive conforme seu código original
+audioLoader.load('./0_assets_T3/start01.mp3', buffer => { startSoundBuffer = buffer; soundPlayer.setBuffer(buffer); soundPlayer.setVolume(0.5); });
+audioLoader.load('./0_assets_T3/track1.mp3', buffer => musicBuffers[1] = buffer);
+audioLoader.load('./0_assets_T3/track2.mp3', buffer => musicBuffers[2] = buffer);
+audioLoader.load('./0_assets_T3/track3.mp3', buffer => musicBuffers[3] = buffer);
+audioLoader.load('./0_assets_T3/shoot.mp3', buffer => { shootBuffer = buffer; shootSound.setBuffer(buffer); shootSound.setVolume(0.4); });
+audioLoader.load('./0_assets_T3/hit.mp3', buffer => { hitBuffer = buffer; hitSound.setBuffer(buffer); hitSound.setVolume(0.6); });
+audioLoader.load('./0_assets_T3/final_lap.mp3', buffer => { finalLapBuffer = buffer; finalLapSound.setBuffer(buffer); finalLapSound.setVolume(1.0); });
+
 let tunnel = buildTunnel();
-let scene, renderer, camera, light, orbit;
+let scene, renderer, camera, orbit;
 let trackNumber=1, currentTrack = new Track(1, tunnel);
 
 const container = document.getElementById( 'container' );
 const stats = new Stats();
 container.appendChild( stats.dom );
-// --- Duas entidades de carro ---
-let car, car2;                       // car = player (car1), car2 = opponent (estático por enquanto)
-let speed = 0, speed2 = 0;           // speed -> player, speed2 -> opponent (não se move agora)
-let maxSpeed = 3, acceleration = 0.008;
-let velocityY = 0, velocityY2 = 0;   // velocidade vertical (gravidade)
-const gravity = -0.10;               // aceleração para baixo
-const groundLevel = 5;               // altura do piso (carros iniciam em Y=5)
 
-let keys = {};
-let clock = new THREE.Clock();
-let laps1 = 0, laps2 = 0;
+// --- ESTRUTURA UNIFICADA DOS CARROS ---
+// Cada objeto no array 'cars' terá todas as propriedades necessárias
+let cars = [];
+
+/* Estrutura de um carro:
+{
+    mesh: THREE.Object3D,
+    type: 'player' | 'cpu',
+    speed: 0,
+    maxSpeed: 3.0, // CPUs podem variar
+    acceleration: 0.008,
+    velocityY: 0,
+    laps: 0,
+    checkpoints: {}, // Clone dos checkpoints da pista
+    shots: 4,
+    penaltyEndTime: 0,
+    wasInsideStart: false,
+    
+    // Específico de CPU
+    cpuTargetIndex: 0,
+    cpuLastShotTime: 0,
+    cpuShootInterval: 5.0
+}
+*/
+
 const totalLaps = 4;
 let raceFinished = false;
 let winner = null;
 
-let wasInsideStart1 = false;
-let wasInsideStart2 = false;
-
-// --- Colisão simples (AABB por wall) ---
+// Configurações Físicas Globais
+const gravity = -0.10;
+const groundLevel = 5;
+const shotsMax = 4;
+let projectiles = [];
+let particles = [];
 let wallAABBs = []; 
 
-const shotsMax = 4;
-let shots1 = shotsMax, shots2 = shotsMax;
-let projectiles = [];
-let penaltyEndTime1 = 0, penaltyEndTime2 = 0;
-let particles = []; // array de partículas ativas
-
-//Waypoints para IA do carro adversário
+// Waypoints para IA (estático)
 const checkpointsList = {
-  1: [
-    new THREE.Vector3(-270, 0, 270),
-    new THREE.Vector3(-270, 0, -270),
-    new THREE.Vector3(270, 0, -270),
-    new THREE.Vector3(270, 0, 270),
-  
-  ],
-  2: [
-    new THREE.Vector3(-270, 0, 270),
-    new THREE.Vector3(-270, 0, -270),
-    new THREE.Vector3(30, 0, -270),
-    new THREE.Vector3(30, 0, -20),
-    new THREE.Vector3(270, 0, -18),
-    new THREE.Vector3(270, 0, 270),
-
-
-
-  ],
-  3: [
-    new THREE.Vector3(53, 0, 384),
-    new THREE.Vector3(30, 0, -370),
-    new THREE.Vector3(-360, 0, -370),
-    new THREE.Vector3(-365, 0, 5),
-    new THREE.Vector3(365, 0, 10),
-    new THREE.Vector3(370, 0, 370),
-
-  ],
+  1: [ new THREE.Vector3(-270, 0, 270), new THREE.Vector3(-270, 0, -270), new THREE.Vector3(270, 0, -270), new THREE.Vector3(270, 0, 270) ],
+  2: [ new THREE.Vector3(-270, 0, 270), new THREE.Vector3(-270, 0, -270), new THREE.Vector3(30, 0, -270), new THREE.Vector3(30, 0, -20), new THREE.Vector3(270, 0, -18), new THREE.Vector3(270, 0, 270) ],
+  3: [ new THREE.Vector3(53, 0, 384), new THREE.Vector3(30, 0, -370), new THREE.Vector3(-360, 0, -370), new THREE.Vector3(-365, 0, 5), new THREE.Vector3(365, 0, 10), new THREE.Vector3(370, 0, 370) ],
 };
-const audioLoader = new THREE.AudioLoader(loadingManager);
-audioLoader.load('./0_assets_T3/start01.mp3', function(buffer) {
-    startSoundBuffer = buffer;
-    soundPlayer.setBuffer(startSoundBuffer);
-    soundPlayer.setVolume(0.5);
-});
 
-audioLoader.load('./0_assets_T3/track1.mp3', function(buffer) {
-    musicBuffers[1] = buffer;
-});
+// Input
+let keys = {};
+let clock = new THREE.Clock();
+let prevShootPressed = false;
 
-// Carregar Música da Pista 2
-audioLoader.load('./0_assets_T3/track2.mp3', function(buffer) {
-    musicBuffers[2] = buffer;
-});
-
-// Carregar Música da Pista 3
-audioLoader.load('./0_assets_T3/track3.mp3', function(buffer) {
-    musicBuffers[3] = buffer;
-});
-// Carregar SFX de Tiro
-audioLoader.load('./0_assets_T3/shoot.mp3', function(buffer) {
-    shootBuffer = buffer;
-    shootSound.setBuffer(shootBuffer);
-    shootSound.setVolume(0.4); // Volume ajustável
-});
-
-// Carregar SFX de Colisão/Dano
-audioLoader.load('./0_assets_T3/hit.mp3', function(buffer) {
-    hitBuffer = buffer;
-    hitSound.setBuffer(hitBuffer);
-    hitSound.setVolume(0.6);
-});
-
-// Carregar SFX de Última Volta
-audioLoader.load('./0_assets_T3/final_lap.mp3', function(buffer) {
-    finalLapBuffer = buffer;
-    finalLapSound.setBuffer(finalLapBuffer);
-    finalLapSound.setVolume(1.0); // Bem alto para destaque
-});
-
+// Funções de Áudio
 function playTrackMusic(trackNum) {
-    // Para a música anterior se estiver tocando
-    if (musicPlayer.isPlaying) {
-        musicPlayer.stop();
-    }
-
-    // Verifica se o buffer da pista existe
+    if (musicPlayer.isPlaying) musicPlayer.stop();
     if (musicBuffers[trackNum]) {
         musicPlayer.setBuffer(musicBuffers[trackNum]);
         musicPlayer.setLoop(true);
         musicPlayer.setVolume(musicVolume);
-        
-        // Só toca se o mute não estiver ativado
-        if (musicEnabled) {
-            musicPlayer.play();
-        }
+        if (musicEnabled) musicPlayer.play();
     }
 }
 
 function startCountdown() {
-    raceStarted = false; // Trava os carros
+    raceStarted = false;
     const el = document.getElementById('countdown');
-    el.style.display = 'block';
-    
-    // Reinicia o contador visual
-    let count = 3;
-    el.textContent = count;
-
-    const interval = setInterval(() => {
-        count--;
-        if (count > 0) {
-            el.textContent = count;
-        } else if (count === 0) {
-            el.textContent = "GO!";
-            raceStarted = true; // Libera o jogo!
-
-            if (startSoundBuffer && soundPlayer.context.state === 'running') {
-                if(soundPlayer.isPlaying) soundPlayer.stop();
-                soundPlayer.play();
+    if(el) {
+        el.style.display = 'block';
+        let count = 3;
+        el.textContent = count;
+        const interval = setInterval(() => {
+            count--;
+            if (count > 0) el.textContent = count;
+            else if (count === 0) {
+                el.textContent = "GO!";
+                raceStarted = true;
+                if (startSoundBuffer && soundPlayer.context.state === 'running') {
+                    if(soundPlayer.isPlaying) soundPlayer.stop();
+                    soundPlayer.play();
+                }
+            } else {
+                el.style.display = 'none';
+                clearInterval(interval);
             }
-            // --------------------------------------
-
-        } else {
-            el.style.display = 'none';
-            clearInterval(interval);
-        }
-    }, 1000);
+        }, 1000);
+    } else {
+        raceStarted = true; // Fallback se não tiver HTML
+    }
 }
 
-// Cria plano
+// SETUP INICIAL DA CENA
+scene = new THREE.Scene();
 let plane = createGroundPlaneXZ(960, 960);
 plane.material = setDefaultMaterial("white", grassTexture);
 plane.position.set(0, 0, 0);
+scene.add(plane);
 
-// Inicia cena
-scene = new THREE.Scene();
 renderer = initRenderer();
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombra suave
-//renderer.setClearColor("#87ceeb"); // Céu
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
 camera = initCamera(new THREE.Vector3(0, 800, 0));
 camera.add(audioListener);
+scene.add(camera);
+
 const skyGeometry = new THREE.SphereGeometry(700, 60, 40);
-const skyMaterial = new THREE.MeshBasicMaterial({
-  map: skyTexture,
-  side: THREE.BackSide,
-  depthWrite: false
-});
+const skyMaterial = new THREE.MeshBasicMaterial({ map: skyTexture, side: THREE.BackSide, depthWrite: false });
 const sky = new THREE.Mesh(skyGeometry, skyMaterial);
 sky.frustumCulled = false;
 sky.renderOrder = -1;
 scene.add(sky);
 
-// === LUZ PRINCIPAL DIRECIONAL (segue posição do carro sem rotacionar) ===
-
+// Iluminação
 const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
 mainLight.castShadow = true;
-
-mainLight.shadow.mapSize.width = 2048;
+mainLight.shadow.mapSize.width = 2048; 
 mainLight.shadow.mapSize.height = 2048;
-mainLight.shadow.camera.near = 1;
+mainLight.shadow.camera.near = 1; 
 mainLight.shadow.camera.far = 800;
 const shadowExtent = 220;
-mainLight.shadow.camera.left = -shadowExtent;
-mainLight.shadow.camera.right = shadowExtent;
-mainLight.shadow.camera.top = shadowExtent;
-mainLight.shadow.camera.bottom = -shadowExtent;
-mainLight.shadow.bias = -0.0006; // reduce acne
+mainLight.shadow.camera.left = -shadowExtent; mainLight.shadow.camera.right = shadowExtent;
+mainLight.shadow.camera.top = shadowExtent; mainLight.shadow.camera.bottom = -shadowExtent;
+mainLight.shadow.bias = -0.0006;
 
 const lightDirection = new THREE.Vector3(-0.7, -1.0, -0.3).normalize();
 const mainLightTarget = new THREE.Object3D();
@@ -259,69 +219,94 @@ scene.add(mainLightTarget);
 mainLight.target = mainLightTarget;
 scene.add(mainLight);
 
-// === LUZ DE PREENCHIMENTO / AMBIENTE (sem sombras) ===
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.5);
 scene.add(hemi);
-// pequena luz direcional de preenchimento oposta à principal, sem sombras
 const fillDir = new THREE.DirectionalLight(0xffffff, 0.25);
 fillDir.position.set(-50, 30, -50);
-fillDir.castShadow = false;
 scene.add(fillDir);
 
-scene.add(camera);
 orbit = new OrbitControls(camera, renderer.domElement);
 
+// Event Listeners
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   keys[key] = true;
-  if (e.code === 'Space') {
-    keys['space'] = true;
-    e.preventDefault();
-  }
+  if (e.code === 'Space') { keys['space'] = true; e.preventDefault(); }
+  if (key === 'q') toggleMusic();
 });
 window.addEventListener('keyup', (e) => {
   const key = e.key.toLowerCase();
   keys[key] = false;
-  if (e.code === 'Space') {
-    keys['space'] = false;
-    e.preventDefault();
-  }
+  if (e.code === 'Space') { keys['space'] = false; e.preventDefault(); }
 });
 
-// Função para pegar a posição do clique na tela
-window.addEventListener('click', (event) => {
-  const raycaster = new THREE.Raycaster();
-  const mouse = new THREE.Vector2();
-  
-  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-  
-  raycaster.setFromCamera(mouse, camera);
-  
-  // Raycast no plano Y=0 (chão)
-  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  const intersection = new THREE.Vector3();
-  raycaster.ray.intersectPlane(plane, intersection);
-  
-  console.log(`Clique em: X: ${intersection.x.toFixed(2)}, Y: ${intersection.y.toFixed(2)}, Z: ${intersection.z.toFixed(2)}`);
-});
+function toggleMusic() {
+    musicEnabled = !musicEnabled;
+    console.log("Música: " + (musicEnabled ? "ON" : "OFF"));
+    if (musicEnabled) {
+        if (!musicPlayer.isPlaying && musicPlayer.buffer) musicPlayer.play();
+        soundPlayer.setVolume(0.5);
+    } else {
+        if (musicPlayer.isPlaying) musicPlayer.pause();
+        soundPlayer.setVolume(0);
+    }
+}
 
-scene.add(plane, currentTrack.getTrackGroup());
+// INICIALIZAÇÃO DOS CARROS
+function initCars() {
+    // Limpa carros existentes se houver
+    cars.forEach(c => scene.remove(c.mesh));
+    cars = [];
 
-// Cria dois carros
-let cpuCheckpoints = getCheckpointList() ; 
-car = createCar();
-car.position.set(110, 5, 275);
-car.rotation.y = Math.PI / 2;
-scene.add(car);
+    // Player (Índice 0)
+    let playerMesh = createCar(); // createCar() sem args cria o carro vermelho/padrão
+    let player = {
+        id: 0,
+        mesh: playerMesh,
+        type: 'player',
+        speed: 0,
+        maxSpeed: 3.0,
+        acceleration: 0.008,
+        velocityY: 0,
+        laps: 0,
+        checkpoints: cloneCheckpoints(currentTrack.getCheckpoints()),
+        shots: shotsMax,
+        penaltyEndTime: 0,
+        wasInsideStart: false
+    };
+    scene.add(playerMesh);
+    cars.push(player);
 
-car2 = createCar(2);
-car2.position.set(110, 5, 265); // posicione ligeiramente diferente
-car2.rotation.y = Math.PI / 2;
-scene.add(car2);
+    // CPUs (Índices 1 a N)
+    for(let i=1; i<=NUM_CPUS; i++) {
+        // createCar(2) cria o modelo alternativo. Podemos variar cores se createCar suportar.
+        // Assumindo createCar(type) onde type define cor/modelo.
+        let cpuMesh = createCar(2); 
+        let cpu = {
+            id: i,
+            mesh: cpuMesh,
+            type: 'cpu',
+            speed: 0,
+            maxSpeed: 2.3, // Variar velocidade levemente (2.3 a 2.6)
+            acceleration: 0.008,
+            velocityY: 0,
+            laps: 0,
+            checkpoints: cloneCheckpoints(currentTrack.getCheckpoints()),
+            shots: shotsMax,
+            penaltyEndTime: 0,
+            wasInsideStart: false,
+            // IA Props
+            cpuTargetIndex: 0,
+            cpuLastShotTime: 0,
+            cpuShootInterval: 4.0 + Math.random() * 3.0
+        };
+        scene.add(cpuMesh);
+        cars.push(cpu);
+    }
+}
 
-// checkpoint state por carro (clonagem leve)
+// Checkpoints helper
 function cloneCheckpoints(srcCheckpoints) {
   const out = {};
   for (let k in srcCheckpoints) {
@@ -335,333 +320,261 @@ function cloneCheckpoints(srcCheckpoints) {
   return out;
 }
 
-// após criar a pista inicial, prepare mapas de checkpoints por carro
-let car1Checkpoints = cloneCheckpoints(currentTrack.getCheckpoints());
-let car2Checkpoints = cloneCheckpoints(currentTrack.getCheckpoints());
+scene.add(currentTrack.getTrackGroup());
 
-// salva posição de câmera "alto" para exibir vencedor
-const raceCamPos = new THREE.Vector3(0, 400, 0);
+// Inicializa a primeira vez
+initCars();
+resetPositions(1);
 
-// Ajusta reset de posição para ambos os carros
-function resetCarPosition(track=1) {
-  let xPos = 110;
-  let zPos = 250;
+// POSICIONAMENTO DO GRID DE LARGADA
+function resetPositions(track=1) {
+  // Define o ponto base de largada
+  let startX = 110;
+  let startZ = 260; // (Lado Direito da Pista)
+  
   if (track === 3){ 
-    xPos = 290 
-    zPos = 370
+    startX = 290;
+    startZ = 380;
   }
-  car.position.set(xPos, 5, zPos+25);
-  car.rotation.y = Math.PI / 2;
-  speed = 0;
 
-  car2.position.set(xPos, 5, zPos+10);
-  car2.rotation.y = Math.PI / 2;
-  speed2 = 0;
+  const colWidth = 15; // Distância entre Frente/Trás
+  const rowDepth = 15; // Distância entre Esquerda/Direita
+
+  cars.forEach((car, index) => {
+      let gridIndex;
+      
+      // Mapeamento manual das posições para garantir a ordem correta
+      if (index === 0) gridIndex = 1;      // Player: Direita Trás
+      else if (index === 1) gridIndex = 0; // CPU 1:  Direita Frente (Pole)
+      else if (index === 2) gridIndex = 3; // CPU 2:  Esquerda Trás
+      else gridIndex = 2;                  // CPU 3:  Esquerda Frente
+
+      // Cálculo das coordenadas baseado no índice fixo acima
+      // Row 0 = Direita, Row 1 = Esquerda
+      // Col 0 = Frente, Col 1 = Trás
+      const row = Math.floor(gridIndex / 2); 
+      const col = gridIndex % 2;           
+      
+      const x = startX + (col * colWidth);
+      const z = startZ + (row * rowDepth);
+
+      car.mesh.position.set(x, 5, z);
+      car.mesh.rotation.y = Math.PI / 2; // Virado para a pista (movimento em -X)
+      car.speed = 0;
+      car.velocityY = 0;
+      car.shots = shotsMax;
+      car.laps = 0;
+      car.penaltyEndTime = 0;
+      car.checkpoints = cloneCheckpoints(currentTrack.getCheckpoints());
+      
+      // --- RESET IA ---
+      car.cpuTargetIndex = 0; 
+      car.currentWaypointVector = null;
+  });
 }
 
-// ao trocar pista, recria checkpoints por carro e reset de variáveis
 function switchTrack(track) {
   wallAABBs.length = 0;
-  laps1 = 0; laps2 = 0;
-  raceFinished = false; winner = null;
-  wasInsideStart1 = false; wasInsideStart2 = false;
+  raceFinished = false; 
+  winner = null;
   winnerBanner.style.display = 'none';
-  cpuCheckpoints = getCheckpointList();
+  
   if (currentTrack) scene.remove(currentTrack.getTrackGroup());
 
-  // limpar projéteis e resetar tiros/penalizações
+  // Limpar projéteis e partículas
   for (const p of projectiles) scene.remove(p.mesh);
   projectiles.length = 0;
-  shots1 = shotsMax; shots2 = shotsMax;
-  penaltyEndTime1 = 0; penaltyEndTime2 = 0;
+  particles.forEach(p => scene.remove(p.mesh));
+  particles = [];
 
-  if (track === 1) {
-    currentTrack = new Track(1, tunnel);
-    trackNumber = 1;
-    resetCarPosition()
-  }
-  if (track === 2) {
-    currentTrack = new Track(2, tunnel);
-    trackNumber = 2;
-    resetCarPosition()
-  }
-  if (track === 3) {
-    currentTrack = new Track(3, tunnel);
-    trackNumber = 3;
-    resetCarPosition(3)
-  }
-
-  // cria cópias de checkpoints para cada carro (estado independente)
-  car1Checkpoints = cloneCheckpoints(currentTrack.getCheckpoints());
-  car2Checkpoints = cloneCheckpoints(currentTrack.getCheckpoints());
-
+  // Nova Pista
+  currentTrack = new Track(track, tunnel);
+  trackNumber = track;
   scene.add(currentTrack.getTrackGroup());
 
-  // Atualiza checkpoints da IA com base na pista atual
-  trackNumber = trackNumber; // já ajustado acima ao criar Track
-  cpuTargetIndex = 0;
-  cpuCheckpoints = getCheckpointList();
+  // Resetar Carros e Checkpoints
+  resetPositions(track);
+  
   playTrackMusic(track);
   startCountdown();
 }
 
-window.addEventListener('keydown', (e) => {
-    const key = e.key.toLowerCase();
-    keys[key] = true;
-
-    // Lógica isolada para o Toggle (apenas uma vez por clique)
-    if (key === 'q') {
-        musicEnabled = !musicEnabled; // Inverte o estado
-
-        if (musicEnabled) {
-            // Se ligou e tem música carregada, toca
-            if (!musicPlayer.isPlaying && musicPlayer.buffer) {
-                musicPlayer.play();
-            }
-            // Liga também o som do motor/efeitos se houver
-            soundPlayer.setVolume(0.5); 
-        } else {
-            // Se desligou, pausa tudo
-            if (musicPlayer.isPlaying) {
-                musicPlayer.pause();
-            }
-            // Opcional: Mutar efeitos sonoros também
-            soundPlayer.setVolume(0); 
-        }
-        
-        // Feedback visual no console (opcional)
-        console.log("Música: " + (musicEnabled ? "ON" : "OFF"));
-    }
-});
+// --- PHYSICS ENGINE ---
 
 function resolveCollisionsAABB(dt) {
   const effectiveFrame = dt * 60;
   const carRadius = 3.7;
-  const carSphere = new THREE.Sphere(car.position.clone(), carRadius);
-  const car2Sphere = new THREE.Sphere(car2.position.clone(), carRadius);
-
-  // Detectar colisão com água
+  const walls = currentTrack.getWallAABBs();
   const waterAABBs = currentTrack.getWaterAABBs();
-  if (waterAABBs && waterAABBs.length > 0) {
-    for (const water of waterAABBs) {
-      if (water.intersectsSphere(carSphere)) {
-        createWaterParticles(car.position, speed, 5);
-        while(speed > maxSpeed * 0.92) speed *= 0.92
-      }
-      if (water.intersectsSphere(car2Sphere)) {
-        createWaterParticles(car2.position, speed2, 5);
-        while(speed2 > cpuMaxSpeed * 0.92) speed2 *= 0.92
-      }
-    }
-  }
+  const tiles = currentTrack.getTilesAABBs();
+  const jumpPads = currentTrack.getJumpPads();
 
-  for (const wall of currentTrack.getWallAABBs()) {
-    if (wall.intersectsSphere(carSphere)) {
-      const closestPoint = wall.clampPoint(car.position.clone(), new THREE.Vector3());
-      const direction = car.position.clone().sub(closestPoint).normalize();
+  // 1. Colisão Carro x Ambiente (MANTIDO IGUAL AO SEU CÓDIGO)
+  cars.forEach(car => {
+      const carSphere = new THREE.Sphere(car.mesh.position.clone(), carRadius);
 
-      // Empurra pra fora
-      car.position.copy(
-          closestPoint.addScaledVector(direction, carRadius)
-      );
-
-      // Ângulo entre frente do carro e normal da parede
-      const carDir = new THREE.Vector3(
-          -Math.sin(car.rotation.y),
-          0,
-          -Math.cos(car.rotation.y)
-      ).normalize();
-
-      const angleRad = carDir.angleTo(direction);
-      const angleDeg = THREE.MathUtils.radToDeg(angleRad);
-
-      let reductionFactor = 0;
-      if (angleDeg > 90) {
-          reductionFactor = (angleDeg - 90) / 1080; // linear 0..1
+      if (waterAABBs) {
+          for (const water of waterAABBs) {
+              if (water.intersectsSphere(carSphere)) {
+                  createWaterParticles(car.mesh.position, car.speed, 5);
+                  while(car.speed > car.maxSpeed * 0.92) car.speed *= 0.92;
+              }
+          }
       }
 
-      // Reduz velocidade conforme ângulo
-      speed *= (1 - reductionFactor);
-    }
-  }
-
-  for (const wall of currentTrack.getWallAABBs()) {
-    if (wall.intersectsSphere(car2Sphere)) {
-      const closestPoint = wall.clampPoint(car2.position.clone(), new THREE.Vector3());
-      const direction = car2.position.clone().sub(closestPoint).normalize();
-
-      // Empurra pra fora
-      car2.position.copy(
-          closestPoint.addScaledVector(direction, carRadius)
-      );
-
-      // Ângulo entre frente do carro e normal da parede
-      const carDir = new THREE.Vector3(
-          -Math.sin(car2.rotation.y),
-          0,
-          -Math.cos(car2.rotation.y)
-      ).normalize();
-
-      const angleRad = carDir.angleTo(direction);
-      const angleDeg = THREE.MathUtils.radToDeg(angleRad);
-
-      let reductionFactor = 0;
-      if (angleDeg > 90) {
-          reductionFactor = (angleDeg - 90) / 1080; // linear 0..1
+      for (const wall of walls) {
+          if (wall.intersectsSphere(carSphere)) {
+              const closestPoint = wall.clampPoint(car.mesh.position.clone(), new THREE.Vector3());
+              const direction = car.mesh.position.clone().sub(closestPoint).normalize();
+              car.mesh.position.copy(closestPoint.addScaledVector(direction, carRadius));
+              
+              const carDir = new THREE.Vector3(-Math.sin(car.mesh.rotation.y), 0, -Math.cos(car.mesh.rotation.y)).normalize();
+              const angleDeg = THREE.MathUtils.radToDeg(carDir.angleTo(direction));
+              let reduction = 0;
+              if (angleDeg > 90) reduction = (angleDeg - 90) / 1080;
+              car.speed *= (1 - reduction);
+          }
       }
 
-      // Reduz velocidade conforme ângulo
-      speed2 *= (1 - reductionFactor);
-    }
+      jumpPads.forEach(pad => {
+          if (pad.intersectsSphere(carSphere)) car.velocityY = 4.0;
+      });
+
+      car.velocityY += gravity * effectiveFrame;
+      car.mesh.position.y += car.velocityY * effectiveFrame;
+
+      let onGround = false;
+      for(const tile of tiles) {
+          if (tile.intersectsSphere(carSphere)) {
+              if(car.mesh.position.y - carRadius < tile.max.y) {
+                 car.velocityY = 0;
+                 car.mesh.position.y = tile.max.y;
+                 onGround = true;
+              }
+          }
+      }
+      
+      if(car.mesh.position.y < -5) {
+          resetPositions(trackNumber);
+      }
+  });
+
+  // ==========================================================
+  // 2. Colisão Carro x Carro (REFATORADO PARA FLUIDEZ ARCADE)
+  // ==========================================================
+  for(let i=0; i<cars.length; i++) {
+      for(let j=i+1; j<cars.length; j++) {
+          const c1 = cars[i];
+          const c2 = cars[j];
+          
+          const dist = c1.mesh.position.distanceTo(c2.mesh.position);
+          const minDist = carRadius * 2;
+
+          if (dist < minDist) {
+              // --- A. Separação Física (Anti-Sobreposição) ---
+              // Isso garante que eles não fiquem grudados visualmente
+              const n = c1.mesh.position.clone().sub(c2.mesh.position).normalize();
+              const overlap = (minDist - dist) / 2;
+              
+              c1.mesh.position.addScaledVector(n, overlap);
+              c2.mesh.position.addScaledVector(n, -overlap);
+
+              // --- B. Lógica de "Bump" (Empurrão) ---
+              const fwd1 = new THREE.Vector3(-Math.sin(c1.mesh.rotation.y), 0, -Math.cos(c1.mesh.rotation.y));
+              const fwd2 = new THREE.Vector3(-Math.sin(c2.mesh.rotation.y), 0, -Math.cos(c2.mesh.rotation.y));
+              
+              // Verifica alinhamento (1 = mesma direção, -1 = frente a frente, 0 = cruzamento em T)
+              const alignment = fwd1.dot(fwd2);
+
+              if (alignment > 0.5) { 
+                  // === BATIDA NA TRASEIRA (Mesmo sentido) ===
+                  // O carro mais rápido transfere momento para o mais lento, mas sem parar.
+                  
+                  if (c1.speed > c2.speed) {
+                      // C1 bateu na traseira de C2
+                      const speedDiff = c1.speed - c2.speed;
+                      c2.speed += speedDiff * 0.6; // O da frente ganha um bom impulso (60% da diferença)
+                      c1.speed -= speedDiff * 0.1; // O de trás perde quase nada (só 10% de atrito)
+                  } else {
+                      // C2 bateu na traseira de C1
+                      const speedDiff = c2.speed - c1.speed;
+                      c1.speed += speedDiff * 0.6;
+                      c2.speed -= speedDiff * 0.1;
+                  }
+              } else {
+                  // === BATIDA LATERAL OU FRONTAL ===
+                  // Apenas deslizam um no outro (atrito mínimo)
+                  // Isso permite ultrapassagens "raspando" sem perder velocidade
+                  c1.speed *= 0.99;
+                  c2.speed *= 0.99;
+              }
+          }
+      }
   }
 
- if (carSphere.intersectsSphere(car2Sphere)) {
-    // normal de car2 -> car1
-    const delta = car.position.clone().sub(car2.position);
-    const dist = Math.max(delta.length(), 1e-4);
-    const n = delta.clone().divideScalar(dist);
-
-    // correção de penetração
-    const penetration = carRadius * 2 - dist;
-    if (penetration > 0) {
-      car.position.addScaledVector(n, penetration * 0.5);
-      car2.position.addScaledVector(n, -penetration * 0.5);
-    }
-
-    // velocidades vetoriais atuais (baseadas na orientação + speed scalar)
-    const v1 = new THREE.Vector3(-Math.sin(car.rotation.y), 0, -Math.cos(car.rotation.y)).multiplyScalar(speed);
-    const v2 = new THREE.Vector3(-Math.sin(car2.rotation.y), 0, -Math.cos(car2.rotation.y)).multiplyScalar(speed2);
-
-    // decompor em componentes normal/tangencial
-    const v1nVal = v1.dot(n);
-    const v2nVal = v2.dot(n);
-    const v1n = n.clone().multiplyScalar(v1nVal);
-    const v2n = n.clone().multiplyScalar(v2nVal);
-    const v1t = v1.clone().sub(v1n);
-    const v2t = v2.clone().sub(v2n);
-
-    // restituição (0..1) — controla "elasticidade" da colisão
-    const restitution = 0.65;
-
-    // troca dos componentes normais (massa igual) com restituição
-    const newV1 = v1t.clone().add(v2n.clone().multiplyScalar(restitution));
-    const newV2 = v2t.clone().add(v1n.clone().multiplyScalar(restitution));
-
-    // projetar de volta para as direções locais dos carros e extrair scalars de velocidade
-    const forward1 = new THREE.Vector3(-Math.sin(car.rotation.y), 0, -Math.cos(car.rotation.y)).normalize();
-    const forward2 = new THREE.Vector3(-Math.sin(car2.rotation.y), 0, -Math.cos(car2.rotation.y)).normalize();
-
-    speed = forward1.dot(newV1);
-    speed2 = forward2.dot(newV2);
-
-    // amortecimento adicional para evitar "ricochete" exagerado
-    const damping = 0.82;
-    speed *= damping;
-    speed2 *= damping;
-  }
-
+  // 3. Colisão Projéteis (MANTIDO IGUAL AO SEU CÓDIGO)
   for (let i = projectiles.length - 1; i >= 0; i--) {
       const p = projectiles[i];
-      const sphere = new THREE.Sphere(p.mesh.position.clone(), p.radius);
-  
-      // paredes
-      let hitWall = false;
-      for (const wall of currentTrack.getWallAABBs()) {
-        if (wall.intersectsSphere(sphere)) { hitWall = true; break; }
+      const pSphere = new THREE.Sphere(p.mesh.position.clone(), p.radius);
+      let hit = false;
+
+      for(const wall of walls) {
+          if(wall.intersectsSphere(pSphere)) { hit = true; break; }
       }
-      if (hitWall) {
-        destroyProjectile(i);
-        continue;
+
+      if(!hit) {
+          for(const car of cars) {
+              if(car.type === p.ownerType && car.id === p.ownerId) continue; 
+              if(p.ownerType === 'cpu' && car.type === 'cpu') continue;
+
+              const cSphere = new THREE.Sphere(car.mesh.position.clone(), carRadius);
+              if(pSphere.intersectsSphere(cSphere)) {
+                  applyPenaltyTo(car);
+                  hit = true;
+                  break;
+              }
+          }
       }
-  
-      // carros
-      const sCar1 = new THREE.Sphere(car.position.clone(), carRadius);
-      const sCar2 = new THREE.Sphere(car2.position.clone(), carRadius);
-  
-      if (p.owner === 'player') {
-        if (sphere.intersectsSphere(sCar2)) {
-          applyPenaltyTo(car2);
-          destroyProjectile(i);
-          continue;
-        }
-      } else {
-        if (sphere.intersectsSphere(sCar1)) {
-          applyPenaltyTo(car);
-          destroyProjectile(i);
-          continue;
-        }
-      }
+
+      if (hit) destroyProjectile(i);
   }
-
-  currentTrack.getJumpPads().forEach(jumpPad => {
-    if (jumpPad.intersectsSphere(carSphere)) {
-      velocityY = 3.5; // impulso para cima
-    }
-    if (jumpPad.intersectsSphere(car2Sphere)) {
-      velocityY2 = 4.5; // impulso para cima
-    }
-  })
-
-  // Aplicar gravidade
-  velocityY += gravity * effectiveFrame;
-  velocityY2 += gravity * effectiveFrame;
-  car.position.y += velocityY * effectiveFrame;
-  car2.position.y += velocityY2 * effectiveFrame;
-
-  currentTrack.getTilesAABBs().forEach(tile => {
-    if (tile.intersectsSphere(carSphere)) {
-      velocityY = 0; // anula gravidade
-      car.position.y = tile.max.y;
-    }
-
-    if (tile.intersectsSphere(car2Sphere)) {
-      velocityY2 = 0; // anula gravidade
-      car2.position.y = tile.max.y;
-    }
-
-  });
-
-    if(trackNumber){
-      if(car.position.y < -2){
-        car.position.set(30, 5, 190)
-      }else if(car2.position.y < -2){
-        car2.position.set(35, 5, 190)
-      }
-    }
-
 }
 
+// HELPER FUNCTIONS DO JOGO
 
-// Helpers de projéteis
-function tryShootPlayer() {
-  if (raceFinished) return;
-  if (shots1 <= 0) return;
-  shots1--;
-  createProjectile(car, 'player');
+function applyPenaltyTo(car) {
+    if (hitBuffer && musicEnabled) {
+        if (hitSound.isPlaying) hitSound.stop();
+        hitSound.play();
+    }
+    const now = clock.getElapsedTime();
+    car.speed *= 0.3; // Reduz drasticamente a velocidade
+    car.penaltyEndTime = now + 3.0; // 3 segundos de penalidade
 }
 
-function createProjectile(owner, ownerTag) {
-  const radius = 1.2;
-  const geom = new THREE.SphereGeometry(radius, 16, 12);
-  const mat = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x550000, shininess: 120 });
-  const mesh = new THREE.Mesh(geom, mat);
+function createProjectile(ownerCar) {
+    const radius = 1.2;
+    const geom = new THREE.SphereGeometry(radius, 16, 12);
+    const mat = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x550000, shininess: 120 });
+    const mesh = new THREE.Mesh(geom, mat);
 
-  const forward = new THREE.Vector3(-Math.sin(owner.rotation.y), 0, -Math.cos(owner.rotation.y)).normalize();
-  mesh.position.copy(owner.position).addScaledVector(forward, 8);
-  mesh.position.y += 1.5;
-  scene.add(mesh);
+    const forward = new THREE.Vector3(-Math.sin(ownerCar.mesh.rotation.y), 0, -Math.cos(ownerCar.mesh.rotation.y)).normalize();
+    mesh.position.copy(ownerCar.mesh.position).addScaledVector(forward, 8);
+    mesh.position.y += 1.5;
+    scene.add(mesh);
 
-  if (shootBuffer && musicEnabled) { // Verifica se som está ligado
-      if (shootSound.isPlaying) shootSound.stop(); // Reinicia se já estiver tocando (tiro rápido)
-      shootSound.play();
-  }
+    if (shootBuffer && musicEnabled) { 
+        if (shootSound.isPlaying) shootSound.stop();
+        shootSound.play();
+    }
 
-  projectiles.push({
-    mesh,
-    vel: forward.clone(),
-    radius,
-    owner: ownerTag
-  });
+    projectiles.push({
+        mesh,
+        vel: forward.clone(),
+        radius,
+        ownerType: ownerCar.type,
+        ownerId: ownerCar.id
+    });
 }
 
 function destroyProjectile(index) {
@@ -671,502 +584,317 @@ function destroyProjectile(index) {
   projectiles.splice(index, 1);
 }
 
-function applyPenaltyTo(targetCar) {
-
-  if (hitBuffer && musicEnabled) {
-      if (hitSound.isPlaying) hitSound.stop();
-      hitSound.play();
-  }
-
-  const now = clock.getElapsedTime();
-
-  if (targetCar === car) {
-    speed *= 0.3;
-    penaltyEndTime1 = now + 3;
-  } else {
-    speed2 *= 0.3;
-    penaltyEndTime2 = now + 3;
-  }
-}
-
 function updateProjectiles(dt) {
-  const projectileSpeed = 480;
-  for (let i = projectiles.length - 1; i >= 0; i--) {
-    const p = projectiles[i];
-    const startPos = p.mesh.position.clone();
-    const moveDist = projectileSpeed * dt;
-    const dir = p.vel.clone().normalize();
-    const endPos = startPos.clone().addScaledVector(dir, moveDist);
-
-    const ray = new THREE.Ray(startPos, dir);
-    let hit = false;
-    const tmpPoint = new THREE.Vector3();
-
-    const walls = currentTrack.getWallAABBs();
-    for (let w = 0; w < walls.length; w++) {
-      const box = walls[w];
-      const ip = ray.intersectBox(box, tmpPoint);
-      if (ip) {
-        const distToIP = ip.distanceTo(startPos);
-        if (distToIP <= moveDist + p.radius) {
-
-          destroyProjectile(i);
-          hit = true;
-          break;
-        }
-      }
+    const speed = 480;
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        const move = p.vel.clone().multiplyScalar(speed * dt);
+        p.mesh.position.add(move);
+        // Remove se for muito longe (otimização)
+        if(p.mesh.position.length() > 2000) destroyProjectile(i);
     }
-
-    if (hit) continue;
-
-    p.mesh.position.copy(endPos);
-  }
 }
 
-// Função para obter altura do piso
-function getFloorHeightAt(x, z) {
-  const raycaster = new THREE.Raycaster();
-  const rayOrigin = new THREE.Vector3(x, 500, z);
-  const rayDirection = new THREE.Vector3(0, -1, 0).normalize();
-  raycaster.set(rayOrigin, rayDirection);
-  
-  const tilesAABBs = currentTrack.getTilesAABBs();
-  let maxHeight = -500;
-  const point = new THREE.Vector3();
-  
-  for (const tile of tilesAABBs) {
-    const intersection = raycaster.ray.intersectBox(tile, point);
-    if (intersection) {
-      const boxTop = tile.max.y;
-      if (boxTop > maxHeight) {
-        maxHeight = boxTop;
-      }
+function createWaterParticles(position, velocity, count=5) {
+    if (Math.abs(velocity) < 0.1) return;
+    for(let i=0; i<count; i++) {
+        const mesh = new THREE.Mesh(
+            new THREE.SphereGeometry(0.5), 
+            new THREE.MeshBasicMaterial({color:0x0099ff, transparent:true})
+        );
+        mesh.position.copy(position).addScalar((Math.random()-0.5)*5);
+        scene.add(mesh);
+        particles.push({
+            mesh, 
+            pos: mesh.position, 
+            vel: new THREE.Vector3((Math.random()-0.5), Math.random()+0.5, (Math.random()-0.5)), 
+            life: 1.0
+        });
     }
-  }
-  
-  return maxHeight > -500 ? maxHeight : 5;
 }
 
-// Sistema de partículas de água
-function createWaterParticles(position, carVelocity, count = 8) {
-  // Só gera partículas se o carro está se movendo
-  if (Math.abs(carVelocity) < 0.1) return;
-
-  for (let i = 0; i < count; i++) {
-    const particle = {
-      position: position.clone().add(new THREE.Vector3(
-        (Math.random() - 0.5) * 15,
-        0,
-        (Math.random() - 0.5) * 15
-      )),
-      velocity: new THREE.Vector3(
-        (Math.random() - 0.5) * 0.6,
-        Math.random() * 0.25 + 0.15,
-        (Math.random() - 0.5) * 0.6
-      ),
-      life: 1.0,
-      mesh: null
-    };
-
-    const geometry = new THREE.SphereGeometry(0.5, 4, 4);
-    const material = new THREE.MeshBasicMaterial({ color: 0x0099ff, transparent: true });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(particle.position);
-    scene.add(mesh);
-    particle.mesh = mesh;
-
-    particles.push(particle);
-  }
-}
-
-// Atualizar partículas
 function updateParticles(dt) {
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    
-    p.life -= dt * 2;
-    
-    if (p.life <= 0) {
-      scene.remove(p.mesh);
-      particles.splice(i, 1);
-      continue;
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life -= dt * 2;
+        if(p.life <= 0) {
+            scene.remove(p.mesh);
+            particles.splice(i, 1);
+        } else {
+            p.vel.y -= 9.8 * dt; // gravidade
+            p.pos.addScaledVector(p.vel, dt);
+            p.mesh.position.copy(p.pos);
+            p.mesh.material.opacity = p.life;
+        }
     }
-
-    p.velocity.y -= 9.8 * dt;
-    p.position.addScaledVector(p.velocity, dt);
-    p.mesh.position.copy(p.position);
-    p.mesh.material.opacity = p.life;
-    p.mesh.scale.set(p.life, p.life, p.life);
-  }
 }
 
-let prevShootPressed = false;
-
-function handleKeys(dt) {
+// LOGICA DO JOGADOR
+function handlePlayerInput(player, dt) {
     const effectiveFrame = dt * 60;
+    const now = clock.getElapsedTime();
+    const penalized = now < player.penaltyEndTime;
 
-  const now = clock.getElapsedTime();
-  const playerPenalized = now < penaltyEndTime1;
-
-    // Troca de pista
+    // Atalhos Pista
     if (keys['1']) switchTrack(1);
     if (keys['2']) switchTrack(2);
     if (keys['3']) switchTrack(3);
 
     if(!raceStarted || raceFinished) return;
 
-    // Controle de direção
+    // Direção
     const turnSpeed = 0.03 * effectiveFrame;
-    if (keys['arrowleft']) car.rotation.y += turnSpeed;
-    if (keys['arrowright']) car.rotation.y -= turnSpeed;
+    if (keys['arrowleft']) player.mesh.rotation.y += turnSpeed;
+    if (keys['arrowright']) player.mesh.rotation.y -= turnSpeed;
 
+    // Tiro
     const shootPressed = !!keys['z'] || !!keys['space'];
     if (shootPressed && !prevShootPressed) {
-      tryShootPlayer();
+        if(player.shots > 0) {
+            createProjectile(player);
+            player.shots--;
+        }
     }
     prevShootPressed = shootPressed;
 
-    // Controle de aceleração/freio
-  const accelerating = keys['arrowup'] || keys['x'];
-  const acceleratingEffective = accelerating && !playerPenalized;
-  const braking = keys['arrowdown'];
-    const maxReverseSpeed = -maxSpeed / 2;
+    // Aceleração
+    const acc = player.acceleration;
+    const maxS = player.maxSpeed;
+    const accelerating = (keys['arrowup'] || keys['x']) && !penalized;
+    const braking = keys['arrowdown'];
 
-  if (acceleratingEffective && !braking) {
-        // Acelerando normalmente
-        speed += acceleration * effectiveFrame;
-        if (speed > maxSpeed) speed = maxSpeed;
-
-    } else if (braking && !accelerating) {
-        // Freando sem acelerar → desaceleração forte
-        if (speed > 0) {
-            speed -= acceleration * 5 * effectiveFrame; // freio mais forte
-            if (speed < 0) speed = 0;
-        } else if (speed > maxReverseSpeed) {
-            // acelera ré se já parou
-            speed -= acceleration * effectiveFrame;
-            if (speed < maxReverseSpeed) speed = maxReverseSpeed;
-        }
-
-    } else if (accelerating && braking) {
-        // Freando enquanto acelera → desaceleração moderada
-        if (speed > 0) {
-            speed -= acceleration * 3 * effectiveFrame;
-            if (speed < 0) speed = 0;
-        } else if (speed > maxReverseSpeed) {
-            speed -= acceleration * 0.5 * effectiveFrame;
-            if (speed < maxReverseSpeed) speed = maxReverseSpeed;
-        }
-
+    if (accelerating && !braking) {
+        player.speed += acc * effectiveFrame;
+        if(player.speed > maxS) player.speed = maxS;
+    } else if (braking) {
+        player.speed -= acc * 3 * effectiveFrame;
+        if(player.speed < -1) player.speed = -1; // Ré
     } else {
-        // Desaceleração natural
-        speed *= Math.pow(0.988, effectiveFrame);
+        player.speed *= Math.pow(0.98, effectiveFrame); // Inércia
     }
 
-    // Movimento lateral
-    const moveSpeed = speed * effectiveFrame;
-    car.position.x -= Math.sin(car.rotation.y) * moveSpeed;
-    car.position.z -= Math.cos(car.rotation.y) * moveSpeed;
-
+    // Aplica movimento
+    const move = player.speed * effectiveFrame;
+    player.mesh.position.x -= Math.sin(player.mesh.rotation.y) * move;
+    player.mesh.position.z -= Math.cos(player.mesh.rotation.y) * move;
 }
 
-// atualização de checkpoints por carro
-function updateCheckpointCounterFor(targetCar, carCheckpoints) {
-  const carRadius = 3.7;
-  const carSphere = new THREE.Sphere(targetCar.position.clone(), carRadius);
-  for (let k in carCheckpoints) {
-    const bb = new THREE.Box3().setFromObject(carCheckpoints[k].object);
-    if (bb.intersectsSphere(carSphere)) {
-      if (carCheckpoints[k].arrived === false) {
-        carCheckpoints[k].arrived = true;
-      }
-    }
-  }
+function updateCPUs(dt) {
+    if(!raceStarted || raceFinished) return;
+    const effectiveFrame = dt * 60;
+    const now = clock.getElapsedTime();
+    const trackWaypoints = (checkpointsList[trackNumber] || []);
+
+    cars.filter(c => c.type === 'cpu').forEach(cpu => {
+        // --- 1. Navegação com Variação (Humanização) ---
+        
+        // Se ainda não tem um alvo fixo calculado (ou acabou de mudar de WP), calcula um novo
+        if (!cpu.currentWaypointVector) {
+             const basePoint = trackWaypoints[cpu.cpuTargetIndex];
+             // Cria uma variação aleatória de +/- 12 no X e Z
+             // A pista tem largura ~60, então +/- 12 mantém eles seguros no asfalto
+             const variationRange = 24; 
+             const offsetX = (Math.random() - 0.5) * variationRange; 
+             const offsetZ = (Math.random() - 0.5) * variationRange;
+             
+             cpu.currentWaypointVector = basePoint.clone().add(new THREE.Vector3(offsetX, 0, offsetZ));
+        }
+
+        const target = cpu.currentWaypointVector;
+        const dir = target.clone().sub(cpu.mesh.position);
+        const dist = dir.length();
+        dir.normalize();
+
+        // Virar para o waypoint "customizado"
+        const desiredAngle = Math.atan2(-dir.x, -dir.z);
+        let angleDiff = desiredAngle - cpu.mesh.rotation.y;
+        angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff)); // Normaliza -PI a PI
+        
+        cpu.mesh.rotation.y += angleDiff * 0.06 * effectiveFrame;
+
+        // Chegou perto? Troca para o próximo e limpa o vetor para gerar nova variação
+        if(dist < 20) { 
+            cpu.cpuTargetIndex = (cpu.cpuTargetIndex + 1) % trackWaypoints.length;
+            cpu.currentWaypointVector = null; // Isso forçará o cálculo de um novo ponto aleatório no próximo frame
+        }
+
+        // --- 2. Movimento (Mantido) ---
+        const penalized = now < cpu.penaltyEndTime;
+        if (!penalized) {
+            cpu.speed += cpu.acceleration * effectiveFrame;
+            if(cpu.speed > cpu.maxSpeed) cpu.speed = cpu.maxSpeed;
+        } else {
+            cpu.speed *= 0.95;
+        }
+
+        const move = cpu.speed * effectiveFrame;
+        cpu.mesh.position.x -= Math.sin(cpu.mesh.rotation.y) * move;
+        cpu.mesh.position.z -= Math.cos(cpu.mesh.rotation.y) * move;
+
+        // --- 3. Atirar em QUALQUER UM ---
+        if(cpu.shots > 0 && (now - cpu.cpuLastShotTime > cpu.cpuShootInterval)) {
+            
+            // Itera sobre TODOS os carros para achar um alvo
+            for(let otherCar of cars) {
+                if (otherCar === cpu) continue; // Não atirar em si mesmo
+
+                const toTarget = otherCar.mesh.position.clone().sub(cpu.mesh.position);
+                const distToTarget = toTarget.length();
+                
+                // Se está perto o suficiente
+                if(distToTarget < 120) { 
+                    const forward = new THREE.Vector3(-Math.sin(cpu.mesh.rotation.y), 0, -Math.cos(cpu.mesh.rotation.y));
+                    const angle = forward.angleTo(toTarget);
+                    
+                    // Se está na mira (Cone de aprox 11 graus)
+                    if(angle < 0.2) { 
+                        createProjectile(cpu);
+                        cpu.shots--;
+                        cpu.cpuLastShotTime = now;
+                        // Define um novo intervalo aleatório para o próximo tiro (entre 2 e 6 segundos)
+                        cpu.cpuShootInterval = 2.0 + Math.random() * 4.0;
+                        break; // Já atirou, para de procurar alvos neste frame
+                    }
+                }
+            }
+        }
+    });
 }
 
-// atualização de voltas por carro; retorna true se esse carro acabou a corrida agora
-function updateLapCounterFor(targetCar, carCheckpoints) {
-  if (raceFinished) return false;
+// LOGICA DE CORRIDA (VOLTAS E CHECKPOINTS)
+function updateRaceLogic() {
+    if(raceFinished) return;
+    
+    const startCenter = currentTrack.getStartCenter();
+    
+    cars.forEach(car => {
+        // 1. Atualiza Checkpoints alcançados
+        // Precisamos criar Boxes temporários para colisão com checkpoints
+        // (Nota: Idealmente cachearíamos os Box3 dos checkpoints, mas clonamos obj a obj aqui)
+        const carSphere = new THREE.Sphere(car.mesh.position.clone(), 3.7);
+        
+        for(let k in car.checkpoints) {
+            if(!car.checkpoints[k].arrived) {
+                const cpObj = car.checkpoints[k].object;
+                const bb = new THREE.Box3().setFromObject(cpObj);
+                if(bb.intersectsSphere(carSphere)) {
+                    car.checkpoints[k].arrived = true;
+                }
+            }
+        }
 
-  const c = currentTrack.getStartCenter();
-  const dx = targetCar.position.x - c.x;
-  const dz = targetCar.position.z - c.y;
-  const inside = (dx <= 5 && dz <= 30) && (dx >= -5 && dz >= -30);
+        // 2. Verifica Linha de Chegada/Volta
+        const dx = car.mesh.position.x - startCenter.x;
+        const dz = car.mesh.position.z - startCenter.y; // track.startCenter usa X,Y como coordenadas 2D do plano
+        // Range da linha de chegada
+        const insideStart = (Math.abs(dx) < 15 && Math.abs(dz) < 15);
 
-  // verifica se todos checkpoints foram atingidos por este carro
-  let checkPointsArrived = true;
-  for (let k in carCheckpoints) {
-    if (carCheckpoints[k].arrived === false) {
-      checkPointsArrived = false;
-      break;
-    }
-  }
+        // Verifica se completou todos checkpoints
+        const allCPs = Object.values(car.checkpoints).every(cp => cp.arrived);
 
-  if (targetCar === car) {
-    if (inside && !wasInsideStart1 && checkPointsArrived) {
-      laps1++;
+        if(insideStart && !car.wasInsideStart && allCPs) {
+            car.laps++;
+            car.shots = shotsMax; // Recarrega armas
+            
+            // Reset checkpoints
+            for(let k in car.checkpoints) car.checkpoints[k].arrived = false;
 
-      if (laps1 === totalLaps - 1) {
-          if (finalLapBuffer && musicEnabled) {
-              finalLapSound.play();
-          }
-          // Opcional: Mostrar aviso na tela
-          const banner = document.getElementById('countdown'); // Reusa o elemento
-          banner.textContent = "FINAL LAP!";
-          banner.style.display = 'block';
-          banner.style.color = '#ff0000'; // Vermelho para urgência
-          setTimeout(() => { banner.style.display = 'none'; }, 2000);
-      }
+            // Eventos Especiais para Player
+            if(car.type === 'player') {
+                if(car.laps === totalLaps - 1) { // Última volta
+                   if(finalLapBuffer && musicEnabled) finalLapSound.play();
+                   showBanner("FINAL LAP!", "red", 2000);
+                }
+            }
 
-      shots1 = shotsMax; // recarrega tiros a cada volta
-      for (let k in carCheckpoints) carCheckpoints[k].arrived = false;
-      if (laps1 >= totalLaps) { 
-        raceFinished = true; 
-        winner = 'Player 1'; 
-        return true; 
-      }
-    }
-    wasInsideStart1 = inside;
-  } else {
-    if (inside && !wasInsideStart2 && checkPointsArrived) {
-      laps2++;
-      shots2 = shotsMax; // recarrega tiros a cada volta
-      for (let k in carCheckpoints) carCheckpoints[k].arrived = false;
-      if (laps2 >= totalLaps) { 
-        raceFinished = true; 
-        winner = 'Player 2'; 
-        return true; 
-      }
-    }
-    wasInsideStart2 = inside;
-  }
-  return false;
+            // Checar Vitoria
+            if(car.laps >= totalLaps) {
+                raceFinished = true;
+                winner = (car.type === 'player') ? "VOCÊ VENCEU!" : `CPU ${car.id} VENCEU!`;
+                showBanner(winner, "#ff0");
+            }
+        }
+        car.wasInsideStart = insideStart;
+    });
 }
 
-/// === INFO BOX ===
-let infoBox = new InfoBox();
-infoBox.add("Rock 'n Roll Racing 3D - Protótipo");
-infoBox.addParagraph();
-infoBox.add("Setas ← → : virar");
-infoBox.add("Setas ↑ / X : acelerar");
-infoBox.add("Seta ↓ : frear");
-infoBox.add("1, 2 e 3 : trocar de pista");
-infoBox.add("Z : atirar");
-infoBox.add("Q : Liga/Desliga Música");
+function showBanner(text, color, time=0) {
+    const b = document.getElementById('countdown'); // Reutilizando div
+    if(b) {
+        b.textContent = text;
+        b.style.display = 'block';
+        b.style.color = color;
+        b.style.fontSize = "60px";
+        if(time > 0) setTimeout(() => { b.style.display = 'none'; }, time);
+    }
+    // Banner fixo de fim de jogo
+    if(raceFinished && winnerBanner) {
+        winnerBanner.textContent = text;
+        winnerBanner.style.display = 'block';
+    }
+}
 
-infoBox.show();
+// HUD
+const hudDiv = document.createElement('div');
+hudDiv.style.cssText = `position:fixed; top:10px; right:10px; color:white; font-family:monospace; background:rgba(0,0,0,0.5); padding:10px; border-radius:5px; pointer-events:none;`;
+document.body.appendChild(hudDiv);
 
-// === HUD de velocidade e voltas ===
-const hud1 = document.createElement('div');
-hud1.style.cssText = `
-  position:fixed; top:12px; right:16px; padding:8px 10px;
-  background:rgba(0,0,0,.6); color:#fff; font:14px monospace;
-  border-radius:8px; z-index:999; pointer-events:none;
-`;
-document.body.appendChild(hud1);
-
-const hud2 = document.createElement('div');
-hud2.style.cssText = `
-  position:fixed; top:56px; right:16px; padding:8px 10px;
-  background:rgba(0,0,0,.45); color:#fff; font:14px monospace;
-  border-radius:8px; z-index:999; pointer-events:none;
-`;
-document.body.appendChild(hud2);
-
-// banner de vencedor (escondido até término)
 const winnerBanner = document.createElement('div');
-winnerBanner.style.cssText = `
-  position:fixed; left:50%; top:40%; transform:translate(-50%,-50%);
-  background:rgba(0,0,0,0.75); color:#ff0; font-size:48px; padding:20px 40px;
-  border-radius:12px; z-index:1000; display:none;
-`;
+winnerBanner.style.cssText = `position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.8); color:#ff0; font-size:48px; padding:30px; border-radius:15px; display:none; z-index:2000;`;
 document.body.appendChild(winnerBanner);
 
-function updateHUDs() {
-  const kmh1 = Math.abs(speed) * 70;
-  const kmh2 = Math.abs(speed2) * 70;
-
-  const totalCheckpoints = Object.keys(currentTrack.getCheckpoints()).length;
-  let arrived1 = 0, arrived2 = 0;
-  for (let k in car1Checkpoints) if (car1Checkpoints[k].arrived) arrived1++;
-  for (let k in car2Checkpoints) if (car2Checkpoints[k].arrived) arrived2++;
-
-  hud1.textContent = `Jogador: Velocidade: ${kmh1.toFixed(1)} Km/h | Voltas: ${laps1}/${totalLaps} | CP: ${arrived1}/${totalCheckpoints} | Tiros: ${shots1}/${shotsMax}`;
-  hud2.textContent = `CPU : Velocidade: ${kmh2.toFixed(1)} Km/h | Voltas: ${laps2}/${totalLaps} | CP: ${arrived2}/${totalCheckpoints} | Tiros: ${shots2}/${shotsMax}`;
+function updateHUD() {
+    let html = "<strong>CLASSIFICAÇÃO</strong><br/>";
+    // Ordenar carros por progresso (Voltas > Checkpoints)
+    // Simplificado: apenas mostra lista
+    cars.forEach(c => {
+        let cpCount = Object.values(c.checkpoints).filter(cp => cp.arrived).length;
+        let name = (c.type === 'player') ? "P1 (Você)" : `CPU ${c.id}`;
+        let style = (c.type === 'player') ? "color:#0f0" : "color:#fff";
+        html += `<span style="${style}">${name}: L${c.laps}/${totalLaps} [CP:${cpCount}] Speed:${Math.abs(c.speed*70).toFixed(0)}</span><br/>`;
+    });
+    // Ammo do player
+    html += `<br/>Munição: ${cars[0].shots}`;
+    hudDiv.innerHTML = html;
 }
 
-//const gridHelper = new THREE.GridHelper(960, 16);
-
-//scene.add(gridHelper);
-
-function updateCamera(dt) {
-  const effectiveFrame = dt * 60;
-  const relCameraOffset = new THREE.Vector3(0, car.position.y+14, 30);
-  const cameraOffset = relCameraOffset.applyMatrix4(car.matrixWorld);
-  const cameraFollowSpeed = 0.08 * effectiveFrame;
-
-  camera.position.lerp(cameraOffset, Math.min(cameraFollowSpeed, 1.0));
-  camera.lookAt(car.position);
-}
-
+// MAIN LOOP
 function render() {
   stats.update();
   const deltaTime = clock.getDelta();
-  // aplicar física / colisões para ambos
-  handleKeys(deltaTime); // controla apenas `car` (player)
+  
+  handlePlayerInput(cars[0], deltaTime);
+  updateCPUs(deltaTime);
   resolveCollisionsAABB(deltaTime);
-  updateCPU(deltaTime);   // IA do adversarío
-
-  
-  // atualizar checkpoints / voltas para cada carro
-  updateCheckpointCounterFor(car, car1Checkpoints);
-  updateCheckpointCounterFor(car2, car2Checkpoints);
-
-  // atualizar projéteis
   updateProjectiles(deltaTime);
-
-  // atualizar partículas
   updateParticles(deltaTime);
+  updateRaceLogic();
+  updateHUD();
 
-  // verifica fim de corrida (primeiro a completar)
-  const finishedNow1 = updateLapCounterFor(car, car1Checkpoints);
-  const finishedNow2 = updateLapCounterFor(car2, car2Checkpoints);
-  if ((finishedNow1 || finishedNow2) && raceFinished) {
-    // mostra banner com vencedor, posiciona câmera alto (uma vez)
-    winnerBanner.textContent = `Vencedor: ${winner}`;
-    winnerBanner.style.display = 'block';
-    camera.position.copy(raceCamPos);
-    camera.lookAt(0,0,0);
-  }
-  // console.log(car2.position.x);
+  // Camera Follow Player
+  const player = cars[0];
+  const camOffset = new THREE.Vector3(0, 18, 35).applyMatrix4(player.mesh.matrixWorld);
+  camera.position.lerp(camOffset, 0.1);
+  camera.lookAt(player.mesh.position);
+
+  // Luz segue player
+  const lightTarget = player.mesh.position.clone();
+  mainLight.position.set(lightTarget.x + 20, 60, lightTarget.z + 20);
+  mainLight.target.position.copy(lightTarget);
   
-  updateHUDs()
-  const lightPos = new THREE.Vector3(
-    car.position.x + 20,
-    car.position.y + 40,
-    car.position.z + 20
-  );
-  mainLight.position.copy(lightPos);
-  mainLight.target.position.copy(lightPos).add(lightDirection);
-  mainLight.target.updateMatrixWorld();
-
   sky.position.copy(camera.position);
-  
+
   renderer.render(scene, camera);
-  if (raceFinished){
-    resetCarPosition()
-  }else{
-    // updateCamera(deltaTime);
-  }
   requestAnimationFrame(render);
 }
 
-//  IA do Carro Adversário ---------
-
-let cpuTargetIndex = 0;
-let cpuMaxSpeed = 2.4;
-let cpuAcceleration = 0.009;
-
-let cpuLastShotTime = 0;
-let prevCpuAhead = false;
-const cpuShootInterval = 5.0; // segundos
-
-// Checkpoints estáticos por pista para a IA (ajuste as coordenadas conforme necessário)
-
-function getCheckpointList() {
-  return (checkpointsList[trackNumber] || []).map(v => v.clone());
-}
-
-
-function updateCPU(dt) {
-    if (!raceStarted || raceFinished) return;
-
-    const effectiveFrame = dt * 60;
-
-    let target = cpuCheckpoints[cpuTargetIndex];
-    if (!target) return;
-
-    const dir = target.clone().sub(car2.position);
-    const distance = dir.length();
-    dir.normalize();
-
-    // virar em direção ao checkpoint
-    const desiredAngle = Math.atan2(-dir.x, -dir.z);
-    let angleDiff = desiredAngle - car2.rotation.y;
-
-    angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-
-    car2.rotation.y += angleDiff * 0.06 * effectiveFrame;
-
-    // tempo atual e penalidade do adversário
-    const now = clock.getElapsedTime();
-    const cpuPenalized = now < penaltyEndTime2;
-
-    // velocidade do adversário (bloqueada se penalizado)
-    if (!cpuPenalized) {
-      speed2 += cpuAcceleration * effectiveFrame;
-      if (speed2 > cpuMaxSpeed) speed2 = cpuMaxSpeed;
-    }
-
-    const moveSpeed = speed2 * effectiveFrame;
-
-    // movimento
-    car2.position.x -= Math.sin(car2.rotation.y) * moveSpeed;
-    car2.position.z -= Math.cos(car2.rotation.y) * moveSpeed;
- 
-    // chegou no checkpoint?
-    if (distance < 12) {
-        cpuTargetIndex++;
-        if (cpuTargetIndex >= cpuCheckpoints.length) cpuTargetIndex = 0;
-    }
-
-    try {
-      if (!raceFinished) {
-        const now = clock.getElapsedTime();
-
-        function computeProgress(laps, carCheckpointsObj, carObj) {
-          let arrived = 0;
-          let nextPos = null;
-          const keys = Object.keys(carCheckpointsObj).sort((a,b) => parseInt(a) - parseInt(b));
-          for (let k of keys) {
-            if (carCheckpointsObj[k].arrived) arrived++;
-            else { nextPos = carCheckpointsObj[k].position; break; }
-          }
-          let dist = 0;
-          if (nextPos) {
-            const cp = new THREE.Vector3(nextPos.x, carObj.position.y, nextPos.y);
-            dist = carObj.position.distanceTo(cp);
-          }
-
-          return (laps * 100000) + (arrived * 1000) + Math.max(0, 1000 - dist);
-        }
-
-        const playerProg = computeProgress(laps1, car1Checkpoints, car);
-        const cpuProg = computeProgress(laps2, car2Checkpoints, car2);
-
-        const cpuIsAhead = cpuProg > playerProg;
-        if (!prevCpuAhead && cpuIsAhead) {
-          if (shots2 > 0) {
-            createProjectile(car2, 'cpu');
-            shots2--;
-            cpuLastShotTime = now;
-          }
-        }
-
-        if (!cpuIsAhead && (now - cpuLastShotTime >= cpuShootInterval)) {
-          if (shots2 > 0) {
-            createProjectile(car2, 'cpu');
-            shots2--;
-            cpuLastShotTime = now;
-          }
-        }
-
-        prevCpuAhead = cpuIsAhead;
-      }
-    } catch (e) {
-      console.warn('CPU shooting logic error:', e);
-    }
-}
-
+// Info Box Inicial
+let infoBox = new InfoBox();
+infoBox.add("Rock 'n Roll Racing 3D - Battle Mode");
+infoBox.addParagraph();
+infoBox.add("Setas: Dirigir");
+infoBox.add("Z ou Espaço: Atirar");
+infoBox.add("Q: Música On/Off");
+infoBox.show();
 
 render();
