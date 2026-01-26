@@ -12,8 +12,47 @@ import { Track, buildTunnel } from './tracks.js';
 //Car
 import { createCar } from './car.js';
 
+
+// --- NOVO: Variáveis de controle de jogo e áudio ---
+let gameLoaded = false;
+let raceStarted = false; // Impede movimento durante contagem
+let startSoundBuffer = null;
+const audioListener = new THREE.AudioListener();
+const soundPlayer = new THREE.Audio(audioListener);
+const shootSound = new THREE.Audio(audioListener);
+const hitSound = new THREE.Audio(audioListener);
+const finalLapSound = new THREE.Audio(audioListener); // Som de "Final Lap!"
+// Controle de Música
+let musicPlayer = new THREE.Audio(audioListener); // Usa o mesmo listener da câmera
+let musicBuffers = {}; // Armazena os buffers das 3 músicas
+let musicEnabled = true; // Estado do som (Ligado/Desligado)
+let musicVolume = 0.3; // Volume mais baixo para não ofuscar os efeitos
+let shootBuffer = null;
+let hitBuffer = null;
+let finalLapBuffer = null;
+// --- NOVO: Loading Manager ---
+const loadingManager = new THREE.LoadingManager(() => {
+    // Quando tudo carregar:
+    const loadingScreen = document.getElementById('loading-screen');
+    const loaderText = document.getElementById('loader');
+    const startBtn = document.getElementById('start-btn');
+    
+    loaderText.style.display = 'none';
+    startBtn.style.display = 'block';
+
+    // O navegador exige interação do usuário para tocar áudio
+    startBtn.addEventListener('click', () => {
+        loadingScreen.classList.add('fade-out');
+        setTimeout(() => loadingScreen.remove(), 500);
+        gameLoaded = true;
+        
+        // Inicia a contagem da primeira pista
+        startCountdown(); 
+    });
+});
+
 // Textures
-const textureLoader = new THREE.TextureLoader();
+const textureLoader = new THREE.TextureLoader(loadingManager);
 const grassTexture = textureLoader.load('./assets/gravelly_sand_diff_4k.jpg');
 grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
 grassTexture.repeat.set(8, 8);
@@ -84,6 +123,95 @@ const checkpointsList = {
 
   ],
 };
+const audioLoader = new THREE.AudioLoader(loadingManager);
+audioLoader.load('./0_assets_T3/start01.mp3', function(buffer) {
+    startSoundBuffer = buffer;
+    soundPlayer.setBuffer(startSoundBuffer);
+    soundPlayer.setVolume(0.5);
+});
+
+audioLoader.load('./0_assets_T3/track1.mp3', function(buffer) {
+    musicBuffers[1] = buffer;
+});
+
+// Carregar Música da Pista 2
+audioLoader.load('./0_assets_T3/track2.mp3', function(buffer) {
+    musicBuffers[2] = buffer;
+});
+
+// Carregar Música da Pista 3
+audioLoader.load('./0_assets_T3/track3.mp3', function(buffer) {
+    musicBuffers[3] = buffer;
+});
+// Carregar SFX de Tiro
+audioLoader.load('./0_assets_T3/shoot.mp3', function(buffer) {
+    shootBuffer = buffer;
+    shootSound.setBuffer(shootBuffer);
+    shootSound.setVolume(0.4); // Volume ajustável
+});
+
+// Carregar SFX de Colisão/Dano
+audioLoader.load('./0_assets_T3/hit.mp3', function(buffer) {
+    hitBuffer = buffer;
+    hitSound.setBuffer(hitBuffer);
+    hitSound.setVolume(0.6);
+});
+
+// Carregar SFX de Última Volta
+audioLoader.load('./0_assets_T3/final_lap.mp3', function(buffer) {
+    finalLapBuffer = buffer;
+    finalLapSound.setBuffer(finalLapBuffer);
+    finalLapSound.setVolume(1.0); // Bem alto para destaque
+});
+
+function playTrackMusic(trackNum) {
+    // Para a música anterior se estiver tocando
+    if (musicPlayer.isPlaying) {
+        musicPlayer.stop();
+    }
+
+    // Verifica se o buffer da pista existe
+    if (musicBuffers[trackNum]) {
+        musicPlayer.setBuffer(musicBuffers[trackNum]);
+        musicPlayer.setLoop(true);
+        musicPlayer.setVolume(musicVolume);
+        
+        // Só toca se o mute não estiver ativado
+        if (musicEnabled) {
+            musicPlayer.play();
+        }
+    }
+}
+
+function startCountdown() {
+    raceStarted = false; // Trava os carros
+    const el = document.getElementById('countdown');
+    el.style.display = 'block';
+    
+    // Reinicia o contador visual
+    let count = 3;
+    el.textContent = count;
+
+    const interval = setInterval(() => {
+        count--;
+        if (count > 0) {
+            el.textContent = count;
+        } else if (count === 0) {
+            el.textContent = "GO!";
+            raceStarted = true; // Libera o jogo!
+
+            if (startSoundBuffer && soundPlayer.context.state === 'running') {
+                if(soundPlayer.isPlaying) soundPlayer.stop();
+                soundPlayer.play();
+            }
+            // --------------------------------------
+
+        } else {
+            el.style.display = 'none';
+            clearInterval(interval);
+        }
+    }, 1000);
+}
 
 // Cria plano
 let plane = createGroundPlaneXZ(960, 960);
@@ -97,7 +225,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombra suave
 //renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 800, 0));
-
+camera.add(audioListener);
 const skyGeometry = new THREE.SphereGeometry(700, 60, 40);
 const skyMaterial = new THREE.MeshBasicMaterial({
   map: skyTexture,
@@ -144,8 +272,22 @@ scene.add(camera);
 orbit = new OrbitControls(camera, renderer.domElement);
 
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
-window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
-window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+window.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  keys[key] = true;
+  if (e.code === 'Space') {
+    keys['space'] = true;
+    e.preventDefault();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  const key = e.key.toLowerCase();
+  keys[key] = false;
+  if (e.code === 'Space') {
+    keys['space'] = false;
+    e.preventDefault();
+  }
+});
 
 // Função para pegar a posição do clique na tela
 window.addEventListener('click', (event) => {
@@ -259,7 +401,38 @@ function switchTrack(track) {
   trackNumber = trackNumber; // já ajustado acima ao criar Track
   cpuTargetIndex = 0;
   cpuCheckpoints = getCheckpointList();
+  playTrackMusic(track);
+  startCountdown();
 }
+
+window.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    keys[key] = true;
+
+    // Lógica isolada para o Toggle (apenas uma vez por clique)
+    if (key === 'q') {
+        musicEnabled = !musicEnabled; // Inverte o estado
+
+        if (musicEnabled) {
+            // Se ligou e tem música carregada, toca
+            if (!musicPlayer.isPlaying && musicPlayer.buffer) {
+                musicPlayer.play();
+            }
+            // Liga também o som do motor/efeitos se houver
+            soundPlayer.setVolume(0.5); 
+        } else {
+            // Se desligou, pausa tudo
+            if (musicPlayer.isPlaying) {
+                musicPlayer.pause();
+            }
+            // Opcional: Mutar efeitos sonoros também
+            soundPlayer.setVolume(0); 
+        }
+        
+        // Feedback visual no console (opcional)
+        console.log("Música: " + (musicEnabled ? "ON" : "OFF"));
+    }
+});
 
 function resolveCollisionsAABB(dt) {
   const effectiveFrame = dt * 60;
@@ -478,6 +651,11 @@ function createProjectile(owner, ownerTag) {
   mesh.position.y += 1.5;
   scene.add(mesh);
 
+  if (shootBuffer && musicEnabled) { // Verifica se som está ligado
+      if (shootSound.isPlaying) shootSound.stop(); // Reinicia se já estiver tocando (tiro rápido)
+      shootSound.play();
+  }
+
   projectiles.push({
     mesh,
     vel: forward.clone(),
@@ -494,7 +672,14 @@ function destroyProjectile(index) {
 }
 
 function applyPenaltyTo(targetCar) {
+
+  if (hitBuffer && musicEnabled) {
+      if (hitSound.isPlaying) hitSound.stop();
+      hitSound.play();
+  }
+
   const now = clock.getElapsedTime();
+
   if (targetCar === car) {
     speed *= 0.3;
     penaltyEndTime1 = now + 3;
@@ -628,14 +813,14 @@ function handleKeys(dt) {
     if (keys['2']) switchTrack(2);
     if (keys['3']) switchTrack(3);
 
-    if(raceFinished) return;
+    if(!raceStarted || raceFinished) return;
 
     // Controle de direção
     const turnSpeed = 0.03 * effectiveFrame;
     if (keys['arrowleft']) car.rotation.y += turnSpeed;
     if (keys['arrowright']) car.rotation.y -= turnSpeed;
 
-    const shootPressed = !!keys['z'];
+    const shootPressed = !!keys['z'] || !!keys['space'];
     if (shootPressed && !prevShootPressed) {
       tryShootPlayer();
     }
@@ -720,6 +905,19 @@ function updateLapCounterFor(targetCar, carCheckpoints) {
   if (targetCar === car) {
     if (inside && !wasInsideStart1 && checkPointsArrived) {
       laps1++;
+
+      if (laps1 === totalLaps - 1) {
+          if (finalLapBuffer && musicEnabled) {
+              finalLapSound.play();
+          }
+          // Opcional: Mostrar aviso na tela
+          const banner = document.getElementById('countdown'); // Reusa o elemento
+          banner.textContent = "FINAL LAP!";
+          banner.style.display = 'block';
+          banner.style.color = '#ff0000'; // Vermelho para urgência
+          setTimeout(() => { banner.style.display = 'none'; }, 2000);
+      }
+
       shots1 = shotsMax; // recarrega tiros a cada volta
       for (let k in carCheckpoints) carCheckpoints[k].arrived = false;
       if (laps1 >= totalLaps) { 
@@ -754,6 +952,8 @@ infoBox.add("Setas ↑ / X : acelerar");
 infoBox.add("Seta ↓ : frear");
 infoBox.add("1, 2 e 3 : trocar de pista");
 infoBox.add("Z : atirar");
+infoBox.add("Q : Liga/Desliga Música");
+
 infoBox.show();
 
 // === HUD de velocidade e voltas ===
@@ -856,7 +1056,7 @@ function render() {
   if (raceFinished){
     resetCarPosition()
   }else{
-    updateCamera(deltaTime);
+    // updateCamera(deltaTime);
   }
   requestAnimationFrame(render);
 }
@@ -879,7 +1079,7 @@ function getCheckpointList() {
 
 
 function updateCPU(dt) {
-    if (raceFinished) return;
+    if (!raceStarted || raceFinished) return;
 
     const effectiveFrame = dt * 60;
 

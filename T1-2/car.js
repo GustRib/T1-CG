@@ -1,10 +1,29 @@
 import * as THREE from 'three';
 import {setDefaultMaterial } from "../libs/util/util.js";
+const textureLoader = new THREE.TextureLoader();
+const carBodyTexture = textureLoader.load('./assets/metal_plate_diff_4k.jpg');
+carBodyTexture.wrapS = carBodyTexture.wrapT = THREE.RepeatWrapping;
+carBodyTexture.repeat.set(1, 1);
+carBodyTexture.anisotropy = 8;
 // Cria carro 
 export function createCar(type=1) {
   let carGroup = new THREE.Group();
-  const matBody = type == 1? setDefaultMaterial("rgba(29, 27, 27, 0.49)") : new THREE.MeshLambertMaterial({color: "rgba(52, 52, 66, 0.49)"});
-  const matDetail = type == 1? setDefaultMaterial("rgba(212, 22, 22, 0.71)") : new THREE.MeshPhongMaterial({color: "rgba(84, 229, 255, 0.71)", shininess: 200, specular: "rgb(255, 255, 255)"});
+  const matBody = new THREE.MeshStandardMaterial({
+      map: carBodyTexture,
+      color: type == 1 ? "#666666" : "#8a8aa0",
+      roughness: 0.4,
+      metalness: 0.4,
+      emissive: type == 1 ? "#222222" : "#2a2a33",
+      emissiveIntensity: 0.8
+    });
+    const matDetail = new THREE.MeshStandardMaterial({
+      map: carBodyTexture,
+      color: type == 1 ? "#ff3b3b" : "#7cf0ff",
+      roughness: 0.3,
+      metalness: 0.5,
+      emissive: type == 1 ? "#7a1a1a" : "#1a6b7a",
+      emissiveIntensity: 1.2
+    });
   const carLength = 8.0;
   const carWidth = 6.0;
   const carHeight = 0.8;

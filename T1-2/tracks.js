@@ -13,9 +13,66 @@ asphaltTexture.wrapS = asphaltTexture.wrapT = THREE.RepeatWrapping;
 asphaltTexture.repeat.set(1, 1);
 asphaltTexture.anisotropy = 16;
 const tunnelTexture = textureLoader.load('./assets/concrete_wall_007_diff_4k.jpg');
-const checkerTexture = textureLoader.load('./assets/textures/checker.ppm');
-checkerTexture.wrapS = checkerTexture.wrapT = THREE.RepeatWrapping;
-checkerTexture.repeat.set(4, 1);
+const brickTexture = textureLoader.load('./assets/cracked_concrete_wall_diff_4k.jpg');
+brickTexture.wrapS = brickTexture.wrapT = THREE.RepeatWrapping;
+brickTexture.repeat.set(1, 1);
+brickTexture.anisotropy = 8;
+const herringWallTexture = textureLoader.load('./assets/herringbone_brick_diff_4k.jpg');
+herringWallTexture.wrapS = herringWallTexture.wrapT = THREE.RepeatWrapping;
+herringWallTexture.repeat.set(2, 1);
+herringWallTexture.anisotropy = 8;
+const plasterWallTexture = textureLoader.load('./assets/rough_plaster_brick_diff_4k.jpg');
+plasterWallTexture.wrapS = plasterWallTexture.wrapT = THREE.RepeatWrapping;
+plasterWallTexture.repeat.set(1, 1);
+plasterWallTexture.anisotropy = 8;
+const finishLineTexture = textureLoader.load('./assets/checkered_pavement_tiles_diff_4k.jpg');
+finishLineTexture.wrapS = finishLineTexture.wrapT = THREE.RepeatWrapping;
+finishLineTexture.anisotropy = 16;
+const barkTexture = textureLoader.load('../assets/textures/wood.png');
+barkTexture.wrapS = barkTexture.wrapT = THREE.RepeatWrapping;
+barkTexture.repeat.set(1, 2);
+barkTexture.anisotropy = 8;
+const foliageTexture = textureLoader.load('../assets/textures/grass.jpg');
+foliageTexture.wrapS = foliageTexture.wrapT = THREE.RepeatWrapping;
+foliageTexture.repeat.set(1, 1);
+foliageTexture.anisotropy = 8;
+const checkpointTexture = textureLoader.load('./assets/metal_plate_diff_4k.jpg');
+checkpointTexture.wrapS = checkpointTexture.wrapT = THREE.RepeatWrapping;
+checkpointTexture.repeat.set(6, 1);
+checkpointTexture.anisotropy = 16;
+const checkpointMaterial = new THREE.MeshStandardMaterial({
+  map: checkpointTexture,
+  color: "#00d4ff",
+  roughness: 0.5,
+  metalness: 0.6,
+  emissive: "#00aaff",
+  emissiveIntensity: 1.2
+});
+// Laterais
+const lateral1Texture = textureLoader.load('./assets/lateral1.jpg');
+lateral1Texture.wrapS = lateral1Texture.wrapT = THREE.RepeatWrapping;
+lateral1Texture.repeat.set(2, 1);
+lateral1Texture.anisotropy = 16;
+const lateral2Texture = textureLoader.load('./assets/lateral2.jpg');
+lateral2Texture.wrapS = lateral2Texture.wrapT = THREE.RepeatWrapping;
+lateral2Texture.repeat.set(1, 1);
+lateral2Texture.anisotropy = 8;
+const lateral3Texture = textureLoader.load('./assets/lateral3.jpg');
+lateral3Texture.wrapS = lateral3Texture.wrapT = THREE.RepeatWrapping;
+lateral3Texture.repeat.set(2, 1);
+lateral3Texture.anisotropy = 8;
+function createFinishLineMaterial(repeatX, repeatY) {
+  const tex = finishLineTexture.clone();
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatX, repeatY);
+  tex.anisotropy = 16;
+  return new THREE.MeshStandardMaterial({
+    map: tex,
+    roughness: 0.9,
+    metalness: 0.0
+  });
+}
+const finishLineMaterialLong = createFinishLineMaterial(2, 6);
 
 export class Track {
     wallAABBs = [];
@@ -106,16 +163,30 @@ export class Track {
 
 
 // Cria Paredes
- function createWall(x, y, z, orientation, colors = ["white", "red"]) {
+ function createWall(x, y, z, orientation, color = "cracked") {
    const wallHeight = 4;
    const wallCenterY = 5.5;
    y = y == 0 ? 8 : y;
    const wall = new THREE.Group();
    const halfGeom = new THREE.BoxGeometry(2, wallHeight, 30);
+   
+   // Mapear cores para texturas
+   const textureMap = {
+     'cracked': brickTexture,
+     'plaster': plasterWallTexture,
+     'herring': herringWallTexture,
+
+   };
+   
+   const textureToUse = textureMap[color] || brickTexture;
+   const wallMaterial = new THREE.MeshStandardMaterial({
+     map: textureToUse,
+     roughness: 0.9,
+     metalness: 0.0
+   });
     
-    for (let i = 0; i < 2; i++) {
-        const mat = setDefaultMaterial(colors[i % 2]);
-    const half = new THREE.Mesh(halfGeom, mat);
+   for (let i = 0; i < 2; i++) {
+    const half = new THREE.Mesh(halfGeom, wallMaterial);
     if (orientation === 'v') {
       half.position.set(x, wallCenterY, z + i * 30);
       half.userData.orient = 'v';
@@ -149,16 +220,18 @@ function addJumpPad(jumpPad, jumpPads) {
   jumpPads.push(bb);
 }
 
- function createTile(color) {
+ function createTile(color, lateral) {
   const tileSize = 60;
   // const tileGeometry = new THREE.PlaneGeometry(tileSize, tileSize);
   const tileGeometry = new THREE.BoxGeometry( 60, 60, 10 );
+
   const tileMaterial = new THREE.MeshStandardMaterial({
     map: asphaltTexture.clone(),
     color: color || 0xffffff,
     roughness: 0.8,
     metalness: 0.2
   });
+
   if (tileMaterial.map) {
     tileMaterial.map.wrapS = tileMaterial.map.wrapT = THREE.RepeatWrapping;
     tileMaterial.map.repeat.set(1, 1);
@@ -166,19 +239,56 @@ function addJumpPad(jumpPad, jumpPads) {
   const tile = new THREE.Mesh(tileGeometry, tileMaterial);
   tile.rotation.x = -Math.PI / 2;
   tile.position.y = floorYAxis;
+  
+  // Criar lateral se parametro foi fornecido
+  if (lateral) {
+    const lateralGeometry = new THREE.BoxGeometry(65, 65, 8);
+    let lateralTexture;
+    
+    // Selecionar textura baseada no parâmetro
+    if (lateral === 'lateral1') lateralTexture = lateral1Texture;
+    else if (lateral === 'lateral2') lateralTexture = lateral2Texture;
+    else if (lateral === 'lateral3') lateralTexture = lateral3Texture;
+    else lateralTexture = lateral1Texture; // padrão
+    
+    const lateralMaterial = new THREE.MeshStandardMaterial({
+      map: lateralTexture,
+      roughness: 0.8,
+      metalness: 0.2
+    });
+    
+    const lateralMesh = new THREE.Mesh(lateralGeometry, lateralMaterial);
+    tile.add(lateralMesh);
+  }
+  
   return tile;
 }
 
 function createCheckPointTile(orientation) {
   const checkPointGeometry = new THREE.BoxGeometry(60, 2, 10);
-  const checkPointMaterial = setDefaultMaterial("#fffb00");
-  const checkPointTile = new THREE.Mesh(checkPointGeometry, checkPointMaterial);
+  const checkPointGroup = new THREE.Group();
+  const base = new THREE.Mesh(checkPointGeometry, checkpointMaterial);
+  checkPointGroup.add(base);
+
+  const stripeMaterial = new THREE.MeshStandardMaterial({
+    color: "#ff3b6a",
+    emissive: "#ff3b6a",
+    emissiveIntensity: 3.0,
+    roughness: 0.4,
+    metalness: 0.2
+  });
+  const stripeGeometry = new THREE.BoxGeometry(60, 0.6, 2);
+  const stripe1 = new THREE.Mesh(stripeGeometry, stripeMaterial);
+  const stripe2 = new THREE.Mesh(stripeGeometry, stripeMaterial);
+  stripe1.position.set(0, 1.3, -2.5);
+  stripe2.position.set(0, 1.3, 2.5);
+  checkPointGroup.add(stripe1, stripe2);
+
   if (orientation === 'v') {
-    checkPointTile.rotation.z = Math.PI / 2;
+    checkPointGroup.rotation.z = Math.PI / 2;
   }
-  checkPointTile.rotation.x = -Math.PI / 2;
-  checkPointTile.position.y = floorYAxis;
-  return checkPointTile;
+  checkPointGroup.rotation.x = -Math.PI / 2;
+  return checkPointGroup;
 }
 
 function createJumpPad(position) {
@@ -197,21 +307,17 @@ function createJumpPad(position) {
   for (let i = 0; i < 8; i++) {
     let tileLower;
     if (i == 5) {
-      tileLower = createTile("orange");
-      let startLineGeometry = new THREE.BoxGeometry(10, 60,10);
-      let startLineMaterial = new THREE.MeshStandardMaterial({
-        map: checkerTexture,
-        roughness: 0.9,
-        metalness: 0.0
-      });
+      tileLower = createTile(undefined, 'lateral1');
+      let startLineGeometry = new THREE.BoxGeometry(20, 60,10);
+      let startLineMaterial = finishLineMaterialLong;
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
       startLine.rotation.x = -Math.PI / 2;
       startLine.position.set(-210 + i * floorWidth, floorYAxis + 0.02, 270);
       group.add(startLine);
     } else {
-      tileLower = createTile();
+      tileLower = createTile(undefined, 'lateral1');
     }
-    let tileUpper = createTile();
+    let tileUpper = createTile(undefined, 'lateral1');
     tileUpper.position.set(-210 + i * floorWidth, floorYAxis, -270);
     tileLower.position.set(-210 + i * floorWidth, floorYAxis, 270);
     group.add(tileUpper, tileLower);
@@ -220,8 +326,8 @@ function createJumpPad(position) {
   }
 
   for (let i = 0; i < 10; i++) {
-    let tileLeft = createTile();
-    let tileRight = createTile();
+    let tileLeft = createTile(undefined, 'lateral1');
+    let tileRight = createTile(undefined, 'lateral1');
     tileLeft.position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
     tileRight.position.set(270, floorYAxis, 270 - (i * (floorHeight)));
     group.add(tileLeft, tileRight);
@@ -288,24 +394,19 @@ function createJumpPad(position) {
 
  function createTrack2(wallAABBs, tilesAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel, waterAABBs = []) {
   const group = new THREE.Group(); 
-  let colorFloor = "#313f50";
   
  for (let i = 0; i < 9; i++) {
     let tileLower;
     if (i == 5) {
-      tileLower = createTile("orange");
-      let startLineGeometry = new THREE.BoxGeometry(10, 60, 10);
-      let startLineMaterial = new THREE.MeshStandardMaterial({
-        map: checkerTexture,
-        roughness: 0.9,
-        metalness: 0.0
-      });
+      tileLower = createTile(undefined, 'lateral2');
+      let startLineGeometry = new THREE.BoxGeometry(20, 60, 10);
+      let startLineMaterial = finishLineMaterialLong;
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
       startLine.rotation.x = -Math.PI / 2;
       startLine.position.set(-210 + i * floorWidth, floorYAxis + 0.02, 270);
       group.add(startLine);
     } else {
-      tileLower = createTile(colorFloor);
+      tileLower = createTile(undefined, 'lateral2');
     }
     tileLower.position.set(-210 + i * floorWidth, floorYAxis, 270);
     group.add(tileLower);
@@ -317,13 +418,13 @@ function createJumpPad(position) {
     let tileUnderWater;
     if(i >= 2 && i <= 7){
       tileLeft = createWaterTile();
-      tileUnderWater = createTile(colorFloor);
+      tileUnderWater = createTile(undefined, 'lateral2');
       tileUnderWater.position.set(-270, -0.8, 270 - (i * (floorHeight)));
       tileLeft.position.set(-270, 5, 270 - (i * (floorHeight)));
       group.add(tileUnderWater);
       addWaterAABB(tileLeft, waterAABBs);
     }else{
-    tileLeft = createTile(colorFloor);
+    tileLeft = createTile(undefined, 'lateral2');
     tileLeft.position.set(-270, floorYAxis, 270 - (i * (floorHeight)));
     }
     group.add(tileLeft);
@@ -331,8 +432,8 @@ function createJumpPad(position) {
   }
 
   for (let i = 0; i < 5; i++) {
-    let tileUpperHalf = createTile(colorFloor);
-    let tileHalfRight = createTile(colorFloor);
+    let tileUpperHalf = createTile(undefined, 'lateral2');
+    let tileHalfRight = createTile(undefined, 'lateral2');
     tileHalfRight.position.set(270, floorYAxis, 210 - (i * (floorHeight)));
     tileUpperHalf.position.set(-210 + i * floorWidth, floorYAxis, -270);
     group.add(tileUpperHalf,tileHalfRight);
@@ -341,10 +442,10 @@ function createJumpPad(position) {
   }
 
   for (let i = 0; i < 4; i++) {
-    let tileHalfLeft = createTile(colorFloor);
+    let tileHalfLeft = createTile(undefined, 'lateral2');
     tileHalfLeft.position.set(30, floorYAxis, -210 + (i * (floorHeight)));
     if(i < 3){
-      let tileHalfLower = createTile(colorFloor);
+      let tileHalfLower = createTile(undefined, 'lateral2');
       tileHalfLower.position.set(90 + i * floorWidth, floorYAxis, -30);
       group.add( tileHalfLower,tileHalfLeft);
       addTileAABB(tileHalfLower, tilesAABBs);
@@ -357,22 +458,22 @@ function createJumpPad(position) {
   
   //Paredes Externas
   for (let i = 0; i < 10; i++) {
-    let wall1 = createWall(-285 + i * 60, 0, 299,'h', ['white', 'blue']);
-    let wall2 = createWall(-299, 10, 255 - i * 60, 'v', ['white', 'blue']);
+    let wall1 = createWall(-285 + i * 60, 0, 299,'h', 'herring');
+    let wall2 = createWall(-299, 10, 255 - i * 60, 'v', 'herring');
     group.add(wall1, wall2);
     addWallAABB(wall1,wallAABBs);
     addWallAABB(wall2,wallAABBs);
   }
   for(let i = 0; i < 6; i++){
-    let wall1 = createWall(300, 0, 255 - i * 60, 'v', ['blue', 'white']);
-    let wall2 = createWall(-285 + i * 60, 0, -300, 'h', ['blue', 'white']);
+    let wall1 = createWall(300, 0, 255 - i * 60, 'v', 'herring');
+    let wall2 = createWall(-285 + i * 60, 0, -300, 'h', 'herring');
     group.add(wall1,wall2);
     addWallAABB(wall1,wallAABBs);
     addWallAABB(wall2,wallAABBs);
   }
   for(let i = 0; i < 4; i++){
-    let wall1 = createWall(76 + i * 60, 0, -61,'h', ['blue', 'white']);
-    let wall2 = createWall(60, 0, -285 + i * 60, 'v', ['blue', 'white']);
+    let wall1 = createWall(76 + i * 60, 0, -61,'h', 'herring');
+    let wall2 = createWall(60, 0, -285 + i * 60, 'v', 'herring');
     group.add(wall1, wall2);
     addWallAABB(wall1,wallAABBs);
     addWallAABB(wall2,wallAABBs);
@@ -380,17 +481,17 @@ function createJumpPad(position) {
 
   //Paredes Internas
   for(let i = 0; i < 8; i++){
-    let wall1 = createWall(-225 + i * 60, 0, 239,'h', ['white', 'blue']);
-    let wall2 = createWall(-239, 0, 195 - i * 60, 'v', ['white', 'blue']);
+    let wall1 = createWall(-225 + i * 60, 0, 239,'h', 'herring');
+    let wall2 = createWall(-239, 0, 195 - i * 60, 'v', 'herring');
     group.add(wall1, wall2);
     addWallAABB(wall1, wallAABBs);
     addWallAABB(wall2, wallAABBs);    
   }
   for(let i = 0; i < 4; i++){
-    let wall1 = createWall(15 + i * 60, 0, 0,'h', ['blue', 'white']);
-    let wall2 = createWall(239, 0, 15 + i * 60, 'v', ['blue', 'white']);
-    let wall3 = createWall(-224 + i * 60, 0, -239,'h', ['blue', 'white']);
-    let wall4 = createWall(0, 0, -224 + i * 60, 'v', ['blue', 'white']);
+    let wall1 = createWall(15 + i * 60, 0, 0,'h', 'herring');
+    let wall2 = createWall(239, 0, 15 + i * 60, 'v', 'herring');
+    let wall3 = createWall(-224 + i * 60, 0, -239,'h', 'herring');
+    let wall4 = createWall(0, 0, -224 + i * 60, 'v', 'herring');
     group.add(wall1, wall2,wall3,wall4);
     addWallAABB(wall1, wallAABBs);
     addWallAABB(wall2, wallAABBs);
@@ -432,42 +533,37 @@ function createJumpPad(position) {
 
  function createTrack3(wallAABBs, tilesAABBs, checkpoints, checkPointsBoxes, startCenter, tunnel, jumpPads=this.jumpPads) {
     const group = new THREE.Group();
-    let colorFloor = "#315035";
 
     for(let i=0; i<14; i++){
         if(i <= 8 || i >= 12){
-        let tileMiddle = createTile(colorFloor);
+        let tileMiddle = createTile(undefined, 'lateral3');
         tileMiddle.position.set(30, floorYAxis, 390 - i * floorHeight);
         group.add(tileMiddle);
         addTileAABB(tileMiddle, tilesAABBs);
         }
 
         if(i == 7){
-          let jumpPadGeometry = new THREE.BoxGeometry(60,10,5)
+          let jumpPadGeometry = new THREE.BoxGeometry(30,10,5)
           let jumpPadMaterial = setDefaultMaterial("pink")
           let jumpPad = new THREE.Mesh(jumpPadGeometry, jumpPadMaterial)
-          jumpPad.position.set(30, 0 , -121)
+          jumpPad.position.set(30, 0.2 , -121)
           group.add(jumpPad)
           addJumpPad(jumpPad, jumpPads)
         }
 
         if(i<7){
-          let tileLeftUpper = createTile(colorFloor);
-          let tileLeftLower = createTile(colorFloor);
-          let tileRightUpper = createTile(colorFloor);
-          let tileRightLower = createTile(colorFloor);
+          let tileLeftUpper = createTile(undefined, 'lateral3');
+          let tileLeftLower = createTile(undefined, 'lateral3');
+          let tileRightUpper = createTile(undefined, 'lateral3');
+          let tileRightLower = createTile(undefined, 'lateral3');
           
           tileLeftUpper.position.set(-390 + i * floorHeight, floorYAxis, -390);
           tileLeftLower.position.set(-390 + i * floorHeight, floorYAxis, 30);
           tileRightUpper.position.set(30 + i * floorHeight, floorYAxis, 30);
           if(i==4){
-            tileRightLower = createTile("orange");
-            let startLineGeometry = new THREE.BoxGeometry(10, 10, 60);
-            let startLineMaterial = new THREE.MeshStandardMaterial({
-              map: checkerTexture,
-              roughness: 0.9,
-              metalness: 0.0
-            });
+            tileRightLower = createTile(undefined, 'lateral3');
+            let startLineGeometry = new THREE.BoxGeometry(20, 10, 60);
+            let startLineMaterial = finishLineMaterialLong;
             let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
             startLine.position.set(startCenter.x, floorYAxis + 0.02, startCenter.y);
             group.add(startLine);
@@ -481,8 +577,8 @@ function createJumpPad(position) {
         }
 
         if(i < 6){  
-          let tileLeftUpper = createTile(colorFloor);
-          let tileRightLower = createTile(colorFloor);
+          let tileLeftUpper = createTile(undefined, 'lateral3');
+          let tileRightLower = createTile(undefined, 'lateral3');
           tileLeftUpper.position.set(-390, floorYAxis, -30 - i * floorHeight);
           tileRightLower.position.set(390, floorYAxis, 30 + i * floorHeight);
           group.add(tileLeftUpper, tileRightLower);
@@ -494,18 +590,18 @@ function createJumpPad(position) {
 
     // Paredes Externas
     for(let i=0; i<8; i++){
-        let wallLeft = createWall(-419, 0, -405 + i * floorHeight, 'v', ['white', 'green']);
-        let wallLeftUpper = createWall(-405 + i * floorHeight, 0, -419, 'h', ['white', 'green']);
+        let wallLeft = createWall(-419, 0, -405 + i * floorHeight, 'v', 'plaster');
+        let wallLeftUpper = createWall(-405 + i * floorHeight, 0, -419, 'h', 'plaster');
         group.add(wallLeft,wallLeftUpper);
         addWallAABB(wallLeft, wallAABBs);
         addWallAABB(wallLeftUpper, wallAABBs);
     }
 
     for(let i=0; i<7; i++){
-        let wallUpperRight = createWall(61, 0, -45 - i * floorHeight, 'v', ['white', 'green']);
-        let wallUpperLeft = createWall(-405 + i * floorHeight, 0, 61, 'h', ['white', 'green']);
-        let wallLowerRight = createWall(15 + i * floorHeight, 0, 420, 'h', ['white', 'green']);
-        let wallLowerRight2 = createWall(419, 0, 375 - i * floorHeight, 'v', ['white', 'green']);
+        let wallUpperRight = createWall(61, 0, -45 - i * floorHeight, 'v', 'plaster');
+        let wallUpperLeft = createWall(-405 + i * floorHeight, 0, 61, 'h', 'plaster');
+        let wallLowerRight = createWall(15 + i * floorHeight, 0, 420, 'h', 'plaster');
+        let wallLowerRight2 = createWall(419, 0, 375 - i * floorHeight, 'v', 'plaster');
         group.add(wallUpperRight, wallUpperLeft, wallLowerRight,wallLowerRight2);
         addWallAABB(wallUpperRight, wallAABBs);
         addWallAABB(wallUpperLeft, wallAABBs);
@@ -514,8 +610,8 @@ function createJumpPad(position) {
     }
 
     for(let i=0; i<6; i++){
-      let wallLowerLeft = createWall(1, 0, 375 - i * floorHeight, 'v', ['green', 'white']);
-      let wallLowerUpper = createWall(75 + i * floorHeight, 0, -1, 'h', ['green', 'white']);
+      let wallLowerLeft = createWall(1, 0, 375 - i * floorHeight, 'v', 'plaster');
+      let wallLowerUpper = createWall(75 + i * floorHeight, 0, -1, 'h', 'plaster');
       group.add(wallLowerLeft, wallLowerUpper);
       addWallAABB(wallLowerLeft, wallAABBs);
       addWallAABB(wallLowerUpper, wallAABBs);
@@ -523,10 +619,10 @@ function createJumpPad(position) {
 
     // Paredes Internas
     for(let i = 0; i<5; i++){
-      let wallLowerDown = createWall(75 + i * floorHeight, 0, 360, 'h', ['white', 'green']);
-      let wallLowerUp = createWall(75 + i * floorHeight, 0, 61, 'h', ['green', 'white']);
-      let wallLowerLeft = createWall(61, 0, 75 + i * floorHeight, 'v', ['green','white']);
-      let wallLowerRight = createWall(360, 0, 75 + i * floorHeight, 'v', ['white','green']);
+      let wallLowerDown = createWall(75 + i * floorHeight, 0, 360, 'h', 'plaster');
+      let wallLowerUp = createWall(75 + i * floorHeight, 0, 61, 'h', 'plaster');
+      let wallLowerLeft = createWall(61, 0, 75 + i * floorHeight, 'v', 'plaster');
+      let wallLowerRight = createWall(360, 0, 75 + i * floorHeight, 'v', 'plaster');
       group.add(wallLowerDown, wallLowerUp,wallLowerLeft, wallLowerRight);
       addWallAABB(wallLowerDown, wallAABBs);
       addWallAABB(wallLowerUp, wallAABBs);
@@ -535,10 +631,10 @@ function createJumpPad(position) {
     }
     
     for(let i = 0; i<6; i++){
-      let wallUpperLeft = createWall(-360, 0, -345 + i * floorHeight, 'v', ['white', 'green']);
-      let wallUpperRight = createWall(-1, 0, -345 + i * floorHeight, 'v', ['green', 'white']);
-      let wallUpperDown = createWall(-346 + i * floorHeight, 0, -359, 'h', ['white', 'green']);
-      let wallUpperUp = createWall(-345 + i * floorHeight, 0, -1, 'h', ['green', 'white']);
+      let wallUpperLeft = createWall(-360, 0, -345 + i * floorHeight, 'v', 'plaster');
+      let wallUpperRight = createWall(-1, 0, -345 + i * floorHeight, 'v', 'plaster');
+      let wallUpperDown = createWall(-346 + i * floorHeight, 0, -359, 'h', 'plaster');
+      let wallUpperUp = createWall(-345 + i * floorHeight, 0, -1, 'h', 'plaster');
       group.add(wallUpperLeft, wallUpperRight, wallUpperDown, wallUpperUp);
       addWallAABB(wallUpperLeft, wallAABBs);
       addWallAABB(wallUpperRight, wallAABBs);
@@ -556,7 +652,7 @@ function createJumpPad(position) {
       group.add(cpTile);
     }
   tunnel.rotation.x = -Math.PI / 2;
-  tunnel.position.set(30, 4, 120);
+  tunnel.position.set(30, 4, 220);
   group.add(tunnel);
 
   let treesArea1 = createRandomTrees(5, {minX:80, maxX:330, minZ:70, maxZ:350}, 5);
@@ -642,9 +738,24 @@ export function buildTunnel()
 
 function createLowPolyTree(type = 1, options = {}) {
   const g = new THREE.Group();
-  const trunkMat = setDefaultMaterial(options.trunkColor || "#6b3e1b");
-  const foliageMat1 = setDefaultMaterial(options.foliageColor || "#2f8b2f");
-  const foliageMat2 = setDefaultMaterial(options.foliageColor2 || "#2f8b2f");
+  const trunkMat = new THREE.MeshStandardMaterial({
+    map: barkTexture,
+    color: options.trunkColor || "#6b3e1b",
+    roughness: 0.9,
+    metalness: 0.0
+  });
+  const foliageMat1 = new THREE.MeshStandardMaterial({
+    map: foliageTexture,
+    color: options.foliageColor || "#2f8b2f",
+    roughness: 0.8,
+    metalness: 0.0
+  });
+  const foliageMat2 = new THREE.MeshStandardMaterial({
+    map: foliageTexture,
+    color: options.foliageColor2 || "#2f8b2f",
+    roughness: 0.8,
+    metalness: 0.0
+  });
 
   // tronco base
   const trunkHeight = options.trunkHeight || 1.6;
