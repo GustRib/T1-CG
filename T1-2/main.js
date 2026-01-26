@@ -12,9 +12,17 @@ import { Track, buildTunnel } from './tracks.js';
 //Car
 import { createCar } from './car.js';
 
-// let tunnel = buildTunnel();
+// Textures
+const textureLoader = new THREE.TextureLoader();
+const grassTexture = textureLoader.load('./assets/gravelly_sand_diff_4k.jpg');
+grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+grassTexture.repeat.set(8, 8);
+grassTexture.anisotropy = 16;
+const skyTexture = textureLoader.load('../assets/textures/skybox/panorama1.jpg');
+
+let tunnel = buildTunnel();
 let scene, renderer, camera, light, orbit;
-let trackNumber=1, currentTrack = new Track(1, null);
+let trackNumber=1, currentTrack = new Track(1, tunnel);
 
 const container = document.getElementById( 'container' );
 const stats = new Stats();
@@ -79,7 +87,7 @@ const checkpointsList = {
 
 // Cria plano
 let plane = createGroundPlaneXZ(960, 960);
-plane.material = setDefaultMaterial("#5b9452");
+plane.material = setDefaultMaterial("white", grassTexture);
 plane.position.set(0, 0, 0);
 
 // Inicia cena
@@ -87,8 +95,20 @@ scene = new THREE.Scene();
 renderer = initRenderer();
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombra suave
-renderer.setClearColor("#87ceeb"); // Céu
+//renderer.setClearColor("#87ceeb"); // Céu
 camera = initCamera(new THREE.Vector3(0, 800, 0));
+
+const skyGeometry = new THREE.SphereGeometry(700, 60, 40);
+const skyMaterial = new THREE.MeshBasicMaterial({
+  map: skyTexture,
+  side: THREE.BackSide,
+  depthWrite: false
+});
+const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+sky.frustumCulled = false;
+sky.renderOrder = -1;
+scene.add(sky);
+
 // === LUZ PRINCIPAL DIRECIONAL (segue posição do carro sem rotacionar) ===
 
 const mainLight = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -214,17 +234,17 @@ function switchTrack(track) {
   penaltyEndTime1 = 0; penaltyEndTime2 = 0;
 
   if (track === 1) {
-    currentTrack = new Track(1, null);
+    currentTrack = new Track(1, tunnel);
     trackNumber = 1;
     resetCarPosition()
   }
   if (track === 2) {
-    currentTrack = new Track(2,null);
+    currentTrack = new Track(2, tunnel);
     trackNumber = 2;
     resetCarPosition()
   }
   if (track === 3) {
-    currentTrack = new Track(3,null);
+    currentTrack = new Track(3, tunnel);
     trackNumber = 3;
     resetCarPosition(3)
   }
@@ -775,9 +795,9 @@ function updateHUDs() {
   hud2.textContent = `CPU : Velocidade: ${kmh2.toFixed(1)} Km/h | Voltas: ${laps2}/${totalLaps} | CP: ${arrived2}/${totalCheckpoints} | Tiros: ${shots2}/${shotsMax}`;
 }
 
-const gridHelper = new THREE.GridHelper(960, 16);
+//const gridHelper = new THREE.GridHelper(960, 16);
 
-scene.add(gridHelper);
+//scene.add(gridHelper);
 
 function updateCamera(dt) {
   const effectiveFrame = dt * 60;
@@ -829,6 +849,8 @@ function render() {
   mainLight.position.copy(lightPos);
   mainLight.target.position.copy(lightPos).add(lightDirection);
   mainLight.target.updateMatrixWorld();
+
+  sky.position.copy(camera.position);
   
   renderer.render(scene, camera);
   if (raceFinished){

@@ -6,6 +6,17 @@ const floorYAxis = 0.01;
 const floorWidth = 60;
 const floorHeight = 60;
 
+// Textures
+const textureLoader = new THREE.TextureLoader();
+const asphaltTexture = textureLoader.load('./assets/asphalt_track_diff_4k.jpg');
+asphaltTexture.wrapS = asphaltTexture.wrapT = THREE.RepeatWrapping;
+asphaltTexture.repeat.set(1, 1);
+asphaltTexture.anisotropy = 16;
+const tunnelTexture = textureLoader.load('./assets/concrete_wall_007_diff_4k.jpg');
+const checkerTexture = textureLoader.load('./assets/textures/checker.ppm');
+checkerTexture.wrapS = checkerTexture.wrapT = THREE.RepeatWrapping;
+checkerTexture.repeat.set(4, 1);
+
 export class Track {
     wallAABBs = [];
     tilesAABBs = [];
@@ -96,19 +107,21 @@ export class Track {
 
 // Cria Paredes
  function createWall(x, y, z, orientation, colors = ["white", "red"]) {
-    y = y == 0 ? 10 : y;
-    const wall = new THREE.Group();
-    const halfGeom = new THREE.BoxGeometry(2, 5, 30);
+   const wallHeight = 4;
+   const wallCenterY = 5.5;
+   y = y == 0 ? 8 : y;
+   const wall = new THREE.Group();
+   const halfGeom = new THREE.BoxGeometry(2, wallHeight, 30);
     
     for (let i = 0; i < 2; i++) {
         const mat = setDefaultMaterial(colors[i % 2]);
     const half = new THREE.Mesh(halfGeom, mat);
     if (orientation === 'v') {
-      half.position.set(x, 7.5, z + i * 30);
+      half.position.set(x, wallCenterY, z + i * 30);
       half.userData.orient = 'v';
     } else {
       half.rotation.y = Math.PI / 2;
-      half.position.set(x + i * 30, 7.5, z);
+      half.position.set(x + i * 30, wallCenterY, z);
       half.userData.orient = 'h';
     }
     wall.add(half);
@@ -140,8 +153,17 @@ function addJumpPad(jumpPad, jumpPads) {
   const tileSize = 60;
   // const tileGeometry = new THREE.PlaneGeometry(tileSize, tileSize);
   const tileGeometry = new THREE.BoxGeometry( 60, 60, 10 );
-  const tileMaterial1 = setDefaultMaterial(color || "#553030");
-  const tile = new THREE.Mesh(tileGeometry, tileMaterial1);
+  const tileMaterial = new THREE.MeshStandardMaterial({
+    map: asphaltTexture.clone(),
+    color: color || 0xffffff,
+    roughness: 0.8,
+    metalness: 0.2
+  });
+  if (tileMaterial.map) {
+    tileMaterial.map.wrapS = tileMaterial.map.wrapT = THREE.RepeatWrapping;
+    tileMaterial.map.repeat.set(1, 1);
+  }
+  const tile = new THREE.Mesh(tileGeometry, tileMaterial);
   tile.rotation.x = -Math.PI / 2;
   tile.position.y = floorYAxis;
   return tile;
@@ -177,7 +199,11 @@ function createJumpPad(position) {
     if (i == 5) {
       tileLower = createTile("orange");
       let startLineGeometry = new THREE.BoxGeometry(10, 60,10);
-      let startLineMaterial = setDefaultMaterial("white");
+      let startLineMaterial = new THREE.MeshStandardMaterial({
+        map: checkerTexture,
+        roughness: 0.9,
+        metalness: 0.0
+      });
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
       startLine.rotation.x = -Math.PI / 2;
       startLine.position.set(-210 + i * floorWidth, floorYAxis + 0.02, 270);
@@ -238,9 +264,9 @@ function createJumpPad(position) {
     group.add(cpTile);
   }
 
-  // tunnel.rotation.x = -Math.PI / 2;
-  // tunnel.position.set(-269, 4, 0);
-  // group.add(tunnel);
+  tunnel.rotation.x = -Math.PI / 2;
+  tunnel.position.set(-269, 4, 0);
+  group.add(tunnel);
 
   let treesArea1 = createRandomTrees(10, {minX:-200, maxX:200, minZ:-200, maxZ:200}, 5);
   let treesArea2 = createRandomTrees(10, {minX:-350, maxX:-310, minZ:-300, maxZ:300}, 5);
@@ -269,7 +295,11 @@ function createJumpPad(position) {
     if (i == 5) {
       tileLower = createTile("orange");
       let startLineGeometry = new THREE.BoxGeometry(10, 60, 10);
-      let startLineMaterial = setDefaultMaterial("white");
+      let startLineMaterial = new THREE.MeshStandardMaterial({
+        map: checkerTexture,
+        roughness: 0.9,
+        metalness: 0.0
+      });
       let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
       startLine.rotation.x = -Math.PI / 2;
       startLine.position.set(-210 + i * floorWidth, floorYAxis + 0.02, 270);
@@ -377,10 +407,9 @@ function createJumpPad(position) {
     checkPointsBoxes.push(box);
     group.add(cpTile);
   }
-  // tunnel.rotation.x = -Math.PI / 2;
-  // tunnel.position.set(-269, 4, 0);
-
-  // group.add(tunnel);
+  tunnel.rotation.x = -Math.PI / 2;
+  tunnel.position.set(-269, 4, 0);
+  group.add(tunnel);
 
   let treesArea1 = createRandomTrees(8, {minX:-200, maxX:200, minZ:20, maxZ:220}, 5);
   let treesArea2 = createRandomTrees(5, {minX:-200, maxX:-20, minZ:-220, maxZ:-20}, 5);
@@ -434,7 +463,11 @@ function createJumpPad(position) {
           if(i==4){
             tileRightLower = createTile("orange");
             let startLineGeometry = new THREE.BoxGeometry(10, 10, 60);
-            let startLineMaterial = setDefaultMaterial("white");
+            let startLineMaterial = new THREE.MeshStandardMaterial({
+              map: checkerTexture,
+              roughness: 0.9,
+              metalness: 0.0
+            });
             let startLine = new THREE.Mesh(startLineGeometry, startLineMaterial);
             startLine.position.set(startCenter.x, floorYAxis + 0.02, startCenter.y);
             group.add(startLine);
@@ -522,10 +555,9 @@ function createJumpPad(position) {
       checkPointsBoxes.push(box);
       group.add(cpTile);
     }
-  // tunnel.rotation.x = -Math.PI / 2;
-  // tunnel.position.set(30, 4, 120);
-
-  // group.add(tunnel);
+  tunnel.rotation.x = -Math.PI / 2;
+  tunnel.position.set(30, 4, 120);
+  group.add(tunnel);
 
   let treesArea1 = createRandomTrees(5, {minX:80, maxX:330, minZ:70, maxZ:350}, 5);
   let treesArea2 = createRandomTrees(10, {minX:-330, maxX:-20, minZ:-320, maxZ:-70}, 5);
@@ -600,7 +632,7 @@ export function buildTunnel()
     csgObject = csgObject.subtract(sphereCSG);
 
   let mesh1 = CSG.toMesh(csgObject, auxMat);
-  mesh1.material = new THREE.MeshPhongMaterial({color: 'gray'});
+  mesh1.material = new THREE.MeshPhongMaterial({map: tunnelTexture, side: THREE.DoubleSide});
   mesh1.position.set(0, 0, 0);
   let cylinder = mesh1;
 
